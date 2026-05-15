@@ -1,0 +1,1576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Speech-Weighted Noise Generator</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-alt: #f4f4f4;
+  --text: #161616;
+  --text-secondary: #525252;
+  --border: #e0e0e0;
+  --accent: #0f62fe;
+  --accent-hover: #0043ce;
+  --green: #198038;
+  --orange: #eb6200;
+  --red: #da1e28;
+  --teal: #009d9a;
+  --purple: #8a3ffc;
+  --radius: 6px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --font: 'IBM Plex Sans', -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+header {
+  margin-bottom: 32px;
+  border-bottom: 2px solid var(--text);
+  padding-bottom: 16px;
+}
+header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+header h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 2px;
+  color: var(--text);
+}
+header p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+.cc-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.12em;
+  display: inline-block;
+}
+.cc-link {
+  display: inline-flex;
+  align-items: baseline;
+  text-decoration: none;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+.card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card h2 .step-num {
+  background: var(--accent);
+  color: #fff;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.card p { margin-bottom: 10px; color: var(--text-secondary); font-size: 0.9rem; }
+
+/* Buttons */
+.btn {
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-green { background: var(--green); color: #fff; }
+.btn-green:hover { background: #116329; }
+.btn-orange { background: var(--orange); color: #fff; }
+.btn-orange:hover { background: #c45300; }
+.btn-red { background: var(--red); color: #fff; }
+.btn-red:hover { background: #b01820; }
+.btn-teal { background: var(--teal); color: #fff; }
+.btn-teal:hover { background: #007d79; }
+.btn-outline {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.btn-outline:hover { background: rgba(15,98,254,0.06); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.control-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text);
+}
+.control-row input[type="number"] {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  width: 110px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+.hint {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+/* Canvas */
+canvas {
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  display: block;
+}
+.waveform-canvas { height: 100px; background: #1a1a2e; }
+.spectrum-canvas { height: 260px; background: #fff; }
+
+/* Drop zone */
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  cursor: pointer;
+  margin: 10px 0;
+  font-size: 0.9rem;
+}
+.drop-zone:hover, .drop-zone.dragover {
+  border-color: var(--accent);
+  background: rgba(15,98,254,0.04);
+  color: var(--accent);
+}
+.drop-zone input[type="file"] { display: none; }
+
+/* Progress */
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-alt);
+  overflow: hidden;
+  margin: 8px 0;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.1s;
+  width: 0%;
+}
+
+/* Status */
+.status {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 6px 0;
+  min-height: 1.4em;
+}
+
+/* Legend */
+.legend {
+  display: flex;
+  gap: 16px;
+  font-size: 0.8rem;
+  margin: 8px 0 4px;
+  flex-wrap: wrap;
+  color: var(--text-secondary);
+}
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-swatch { width: 20px; height: 3px; border-radius: 2px; }
+.trace-toggles {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  margin: 8px 0 6px;
+  color: var(--text-secondary);
+}
+.trace-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  user-select: none;
+}
+.trace-toggle input { margin: 0; }
+
+/* Info box */
+.info-box {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin: 10px 0;
+  line-height: 1.5;
+}
+
+/* File list */
+.file-list {
+  font-size: 0.85rem;
+  margin: 8px 0;
+}
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--surface-alt);
+}
+.file-item:last-child { border-bottom: none; }
+.file-item .name { flex: 1; font-family: var(--mono); font-size: 0.8rem; }
+.file-item .dur { color: var(--text-secondary); font-size: 0.8rem; }
+.file-item .remove {
+  background: none;
+  border: none;
+  color: var(--red);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 6px;
+}
+
+/* Tabs */
+.tab-row { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 16px; }
+.tab {
+  padding: 8px 16px;
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 0.85rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.15s;
+}
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab:hover { color: var(--text); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .app { padding: 16px 12px 60px; }
+  .card { padding: 16px; }
+  .spectrum-canvas { height: 200px; }
+}
+
+.hidden { display: none !important; }
+</style>
+
+<style>
+.disclaimer-box {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-alt);
+  padding: 10px 14px;
+}
+.disclaimer-box summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+.disclaimer-box p {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.footer-disclaimer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+</style>
+
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <h1>WCA2026 - Navigating a Noisy World: Speech in Noise Tests</h1>
+	<h2>Demonstrations: Speech-weighted noise and the ILTASS</h2>
+    <p><a class="cc-link" href="https://creativecommons.org/licenses/by/4.0/deed.en" aria-label="Creative Commons Attribution 4.0 licence"><svg class="cc-icon" viewBox="0 0 64 64" role="img" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="none" stroke="currentColor" stroke-width="5"/><text x="32" y="40" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="currentColor">cc</text></svg></a> 2026 <a href="https://profiles.canterbury.ac.nz/Greg-O-Beirne">Greg O'Beirne</a>, University of Canterbury</p>
+  </header>
+
+  <details class="disclaimer-box">
+    <summary>Disclaimer</summary>
+    <p>
+      This application is provided ‘as is’. The University of Canterbury (the University) makes no representations and disclaims all warranties (express or implied) regarding use of this application and any result it may produce. You use this application at your own risk and accept that to the fullest extent available under law, the University may not be held liable for any loss or damage arising directly or indirectly in connection with, or resulting from, use of this application.
+    </p>
+  </details>
+
+
+  <!-- STEP 1: Input -->
+  <div class="card" id="step1">
+    <h2><span class="step-num">1</span> Speech input</h2>
+    <p>Record your voice or upload speech files. Multiple files will be pooled for spectral analysis and noise generation.</p>
+
+    <div class="tab-row">
+      <button class="tab active" onclick="switchTab('record')">Record</button>
+      <button class="tab" onclick="switchTab('upload')">Upload files</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-record">
+      <canvas id="waveform" class="waveform-canvas" aria-label="Live waveform display"></canvas>
+      <div class="btn-row">
+        <button class="btn btn-red" id="rec-btn" onclick="toggleRecord()">⏺ Record</button>
+        <button class="btn btn-outline" id="play-rec-btn" onclick="playRecording()" disabled>▶ Play</button>
+        <button class="btn btn-outline" id="save-rec-btn" onclick="downloadRecording()" disabled>⬇ Save recording WAV</button>
+      </div>
+      <div class="status" id="rec-status"></div>
+    </div>
+
+    <div class="tab-panel" id="tab-upload">
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        Drop WAV / MP3 / MP4 files here, or click to browse
+        <input type="file" id="file-input" accept=".wav,.mp3,.mp4,audio/*,video/mp4" multiple onchange="handleFiles(this.files)"/>
+      </div>
+      <div class="file-list" id="file-list"></div>
+    </div>
+  </div>
+
+  <!-- STEP 2: Generate Noise -->
+  <div class="card hidden" id="step2">
+    <h2><span class="step-num">2</span> Generate speech-weighted noise</h2>
+    <p>Superimpose randomised copies of the speech to create noise with the same spectral shape.</p>
+
+    <div class="control-row">
+      <label for="super-count">Superimpositions
+        <input type="number" id="super-count" value="10000" min="100" max="10000" step="100" inputmode="numeric"/>
+      </label>
+      <span class="hint">Default 10,000. For long recordings, fewer can be faster and still effective.</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="gen-btn" onclick="generateNoise()">Generate noise</button>
+    </div>
+    <div class="progress-bar hidden" id="gen-progress-wrap">
+      <div class="progress-bar-fill" id="gen-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+    <div class="status" id="gen-status"></div>
+
+    <div class="hidden" id="noise-result">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-swatch" style="background:#5dade2;"></div> <span id="legend-speech">Speech</span></div>
+        <div class="legend-item"><div class="legend-swatch" style="background:#eb6200;"></div> <span id="legend-noise">Noise (shifted to align)</span></div>
+      </div>
+      <canvas id="spectrum1" class="spectrum-canvas" aria-label="Long-term average spectrum of speech and generated noise"></canvas>
+      <div class="info-box" id="noise-info"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-green" id="play-noise-btn" onclick="toggleNoise()">▶ Play noise (looped)</button>
+        <button class="btn btn-outline" id="play-speech-btn" onclick="playSpeech()">▶ Play speech</button>
+        <button class="btn btn-outline" onclick="downloadNoise()">⬇ Save noise WAV</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3: ILTASS Shaping -->
+  <div class="card hidden" id="step3">
+    <h2><span class="step-num">3</span> Shape to ILTASS</h2>
+    <p>Apply a spectral correction filter so the speech matches the International Long-Term Average Speech Spectrum (Byrne et al., 1994). Then generate new noise from the shaped speech.</p>
+
+    <div class="btn-row">
+      <button class="btn btn-teal" id="filter-btn" onclick="applyILTASS()">Apply ILTASS filter</button>
+    </div>
+    <div class="progress-bar hidden" id="filter-progress-wrap">
+      <div class="progress-bar-fill" id="filter-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+    </div>
+    <div class="status" id="filter-status"></div>
+
+    <div class="hidden" id="filter-result">
+      <div class="trace-toggles" id="spectrum2-toggles" aria-label="Show or hide spectrum traces"></div>
+      <canvas id="spectrum2" class="spectrum-canvas" aria-label="Spectrum comparison showing original speech, ILTASS target, filtered speech, and new noise"></canvas>
+      <div class="info-box" id="filter-info"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-teal" id="play-filtered-btn" onclick="toggleFilteredNoise()">▶ Play ILTASS noise (looped)</button>
+        <button class="btn btn-outline" id="play-filtered-speech-btn" onclick="playFilteredSpeech()">▶ Play filtered speech</button>
+        <button class="btn btn-outline" onclick="downloadFilteredNoise()">⬇ Save ILTASS noise WAV</button>
+        <button class="btn btn-outline" onclick="downloadFilteredSpeech()">⬇ Save ILTASS-corrected speech file(s)</button>
+      </div>
+    </div>
+  </div>
+
+  <footer style="margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--text-secondary);">
+    G. O'Beirne, University of Canterbury, 2026. ILTASS data: Byrne et al. (1994), full-resolution spectrum.
+  
+    <div class="footer-disclaimer">
+      This application is provided ‘as is’. The University of Canterbury (the University) makes no representations and disclaims all warranties (express or implied) regarding use of this application and any result it may produce. You use this application at your own risk and accept that to the fullest extent available under law, the University may not be held liable for any loss or damage arising directly or indirectly in connection with, or resulting from, use of this application.
+    </div>
+
+  </footer>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ===================================================================
+   STATE
+   =================================================================== */
+let audioCtx = null;
+let mediaStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let analyser = null;
+let animFrame = null;
+let isRecording = false;
+
+// Decoded audio buffers
+let speechBuffers = [];  // [{data: Float32Array, fs: number, name: string}]
+let concatenatedSpeech = null; // Float32Array — all speech joined
+let speechFs = 0;
+
+// Generated outputs
+let noiseBuffer = null;
+let noiseFs = 0;
+let filteredSpeechBuffers = []; // same structure as speechBuffers but filtered
+let filteredConcatenated = null;
+let filteredNoiseBuffer = null;
+let filteredNoiseFs = 0;
+
+// Playback sources
+let recordingSrc = null;
+let recordingIsPlaying = false;
+let speechSrc = null;
+let speechIsPlaying = false;
+let noiseSrc = null;
+let noiseIsPlaying = false;
+let filteredNoiseSrc = null;
+let filteredNoiseIsPlaying = false;
+let filteredSpeechSrc = null;
+let filteredSpeechIsPlaying = false;
+
+/* ===================================================================
+   ILTASS — Byrne et al. (1994)
+   One-third octave band levels, overall level normalised to 0 dB
+   Frequencies in Hz, levels in dB relative to overall
+   =================================================================== */
+const ILTASS_FREQS = [
+  1.345825,  6.729126,  12.112427,  17.495728,  22.879028,  28.262329,  33.64563,  39.028931,  44.41223144,  49.79553222,
+  55.178833,  60.56213378,  65.94543456,  71.32873544,  76.71203622,  82.09533689,  87.47863756,  92.86193844,  98.24523922,  103.62854,
+  109.0118408,  114.3951416,  119.7784424,  125.1617432,  130.545044,  135.9283448,  141.3116456,  146.6949463,  152.078247,  157.4615478,
+  162.8448486,  168.2281494,  173.6114502,  178.994751,  184.3780518,  189.7613526,  195.1446534,  200.5279541,  205.9112548,  211.2945556,
+  216.6778564,  222.0611572,  227.444458,  232.8277588,  238.2110596,  243.5943604,  248.9776612,  254.360962,  259.7442627,  265.1275634,
+  270.5108642,  275.894165,  281.2774658,  286.6607666,  292.0440674,  297.4273682,  302.810669,  308.1939698,  313.5772706,  318.9605713,
+  324.343872,  329.7271728,  335.1104736,  340.4937744,  345.8770752,  351.260376,  356.6436768,  362.0269776,  367.4102784,  372.7935791,
+  378.1768798,  383.5601806,  388.9434814,  394.3267822,  399.710083,  405.0933838,  410.4766846,  415.8599854,  421.2432862,  426.6265869,
+  432.0098876,  437.3931884,  442.7764892,  448.15979,  453.5430908,  458.9263916,  464.3096924,  469.6929932,  475.076294,  480.4595948,
+  485.8428956,  491.2261963,  496.609497,  516.8,  689.06,  861.33,  1033.59,  1205.86,  1378.13,  1550.39,
+  1722.66,  1894.92,  2067.19,  2239.45,  2411.72,  2583.98,  2756.25,  2928.52,  3100.78,  3273.05,
+  3445.31,  3617.58,  3789.84,  3962.11,  4134.38,  4306.64,  4478.91,  4651.17,  4823.44,  4995.7,
+  5167.97,  5340.23,  5512.5,  5684.77,  5857.03,  6029.3,  6201.56,  6373.83,  6546.09,  6718.36,
+  6890.63,  7062.89,  7235.16,  7407.42,  7579.69,  7751.95,  7924.22,  8096.48,  8268.75,  8441.02,
+  8613.28,  8785.55,  8957.81,  9130.08,  9302.34,  9474.61,  9646.88,  9819.14,  9991.41,  10163.67,
+  10335.94,  10508.2,  10680.47,  10852.73,  11025.0,  11197.27,  11369.53,  11541.8,  11714.06,  11886.33,
+  12058.59,  12230.86,  12403.13,  12575.39,  12747.66,  12919.92,  13092.19,  13264.45,  13436.72,  13608.98,
+  13781.25,  13953.52,  14125.78,  14298.05,  14470.31,  14642.58,  14814.84,  14987.11,  15159.38,  15331.64,
+  15503.91,  15676.17,  15848.44,  16020.7,  16192.97,  16365.23,  16537.5,  16709.77,  16882.03,  17054.3,
+  17226.56,  17398.83,  17571.09,  17743.36,  17915.63,  18087.89,  18260.16,  18432.42,  18604.69,  18776.95,
+  18949.22,  19121.48,  19293.75,  19466.02,  19638.28,  19810.55,  19982.81,  20155.08,  20327.34,  20499.61,
+  20671.88,  20844.14,  21016.41,  21188.67,  21360.94,  21533.2,  21705.47,  21877.73,  22006.93
+];
+
+const ILTASS_LEVELS = [
+  -102.4188908,  -85.18331678,  -72.72162378,  -65.31001778,  -59.08936078,  -54.97633078,  -53.14885478,  -51.25349878,  -49.80809389,  -48.23505344,
+  -46.55148044,  -44.92815433,  -43.51114567,  -41.92655133,  -40.0044,  -37.65359289,  -35.50109389,  -33.82842678,  -32.42568122,  -31.54197478,
+  -30.67605811,  -29.34037444,  -28.59816389,  -29.307358,  -30.748661,  -31.68636667,  -32.25341411,  -32.21795511,  -31.81478656,  -31.55814622,
+  -31.41473089,  -31.20770689,  -31.01254189,  -30.50670533,  -29.86271867,  -29.43519156,  -29.29021789,  -29.41680222,  -29.37418489,  -29.46131478,
+  -29.38100267,  -29.46815822,  -29.67398356,  -29.55690011,  -29.80187911,  -29.81063156,  -29.55853556,  -29.78618822,  -30.36758756,  -30.74324367,
+  -31.04896444,  -31.37409289,  -31.47358756,  -31.85437989,  -32.53134456,  -32.96334411,  -33.06836989,  -32.88500333,  -32.91556789,  -33.04727622,
+  -33.02948322,  -32.94614867,  -32.76524589,  -32.54438267,  -32.37510811,  -31.82553856,  -31.20771189,  -30.94507767,  -30.59073978,  -30.39146256,
+  -30.04642911,  -29.666762,  -29.74808789,  -29.67341189,  -29.59184767,  -29.686091,  -30.00091278,  -30.512992,  -30.78944367,  -30.96743567,
+  -31.16273022,  -31.168028,  -31.00292022,  -30.87788722,  -31.058987,  -31.09451644,  -31.37207689,  -31.24711389,  -31.04143133,  -30.85579467,
+  -31.03647833,  -30.93553,  -30.68258278,  -31.33,  -35.89,  -40.64,  -43.25,  -44.32,  -44.67,  -45.58,
+  -47.99,  -50.45,  -51.48,  -51.76,  -51.96,  -52.57,  -53.27,  -53.97,  -54.54,  -55.2,
+  -55.66,  -56.15,  -56.67,  -56.97,  -57.36,  -57.75,  -58.14,  -58.3,  -58.65,  -58.86,
+  -59.16,  -59.34,  -59.47,  -59.71,  -59.77,  -60.03,  -60.14,  -60.3,  -60.42,  -60.6,
+  -60.87,  -60.87,  -61.18,  -61.26,  -61.43,  -61.57,  -61.82,  -61.88,  -61.98,  -62.11,
+  -62.33,  -62.37,  -62.52,  -62.69,  -62.85,  -62.79,  -62.93,  -63.01,  -63.05,  -63.17,
+  -63.19,  -63.24,  -63.24,  -63.28,  -63.27,  -63.32,  -63.36,  -63.33,  -63.22,  -63.33,
+  -63.26,  -63.18,  -63.2,  -63.24,  -63.17,  -63.12,  -63.04,  -63.03,  -62.93,  -62.93,
+  -62.94,  -63.03,  -62.98,  -62.76,  -62.89,  -62.93,  -62.84,  -62.85,  -63.02,  -63.04,
+  -63.23,  -63.23,  -63.43,  -63.56,  -63.74,  -63.88,  -64.15,  -64.38,  -64.62,  -64.99,
+  -65.3,  -65.68,  -66.05,  -66.49,  -67.0,  -67.45,  -67.91,  -68.27,  -68.89,  -69.37,
+  -69.74,  -70.14,  -70.42,  -70.54,  -70.81,  -70.89,  -70.72,  -70.58,  -70.38,  -70.04,
+  -69.72,  -69.44,  -69.22,  -69.05,  -68.94,  -68.88,  -68.85,  -69.0,  -68.96
+];
+
+
+/* ===================================================================
+   UTILITIES
+   =================================================================== */
+async function ensureCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  return audioCtx;
+}
+
+function rmsOf(x) {
+  let s = 0;
+  for (let i = 0; i < x.length; i++) s += x[i] * x[i];
+  return Math.sqrt(s / Math.max(1, x.length));
+}
+
+function peakAbs(x) {
+  let p = 0;
+  for (let i = 0; i < x.length; i++) { const a = Math.abs(x[i]); if (a > p) p = a; }
+  return p;
+}
+
+function ampToDbFS(x) {
+  return 20 * Math.log10(Math.max(Math.abs(x), 1e-12));
+}
+
+function formatDbFSFromAmp(x) {
+  return ampToDbFS(x).toFixed(1).replace('-', '−') + ' dB FS';
+}
+
+function rmsDbFS(x) {
+  return formatDbFSFromAmp(rmsOf(x));
+}
+
+function peakDbFS(x) {
+  return formatDbFSFromAmp(peakAbs(x));
+}
+
+function normalisePeak(x, target) {
+  const p = peakAbs(x);
+  if (p === 0) return;
+  const g = target / p;
+  for (let i = 0; i < x.length; i++) x[i] *= g;
+}
+
+function getSuperimpositionCount() {
+  const el = document.getElementById('super-count');
+  const raw = el ? Number(el.value) : 10000;
+  const n = Math.round(Number.isFinite(raw) ? raw : 10000);
+  return Math.max(100, Math.min(10000, n));
+}
+
+/* ===================================================================
+   FFT (radix-2)
+   =================================================================== */
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 0, j = 0; i < n; i++) {
+    if (j > i) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+    let m = n >> 1;
+    while (m >= 1 && j >= m) { j -= m; m >>= 1; }
+    j += m;
+  }
+  for (let size = 2; size <= n; size *= 2) {
+    const half = size / 2;
+    const angle = -2 * Math.PI / size;
+    for (let i = 0; i < n; i += size) {
+      for (let j = 0; j < half; j++) {
+        const cos = Math.cos(angle * j), sin = Math.sin(angle * j);
+        const tr = re[i+j+half]*cos - im[i+j+half]*sin;
+        const ti = re[i+j+half]*sin + im[i+j+half]*cos;
+        re[i+j+half] = re[i+j] - tr; im[i+j+half] = im[i+j] - ti;
+        re[i+j] += tr; im[i+j] += ti;
+      }
+    }
+  }
+}
+
+function ifft(re, im) {
+  const n = re.length;
+  for (let i = 0; i < n; i++) im[i] = -im[i];
+  fft(re, im);
+  for (let i = 0; i < n; i++) { re[i] /= n; im[i] = -im[i] / n; }
+}
+
+/* ===================================================================
+   LTAS COMPUTATION
+   =================================================================== */
+function computeLTAS(data, fs, fftSize) {
+  fftSize = fftSize || 4096;
+  if (!data || data.length < fftSize) return { freqs: new Float64Array(0), magnitudes: new Float64Array(0) };
+  const hopSize = fftSize / 2;
+  const numFrames = Math.floor((data.length - fftSize) / hopSize);
+  if (numFrames < 1) return { freqs: new Float64Array(0), magnitudes: new Float64Array(0) };
+
+  const win = new Float32Array(fftSize);
+  let winSum = 0;
+  for (let i = 0; i < fftSize; i++) {
+    win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (fftSize - 1)));
+    winSum += win[i];
+  }
+
+  const halfN = fftSize / 2 + 1;
+  const avgMag = new Float64Array(halfN);
+
+  for (let frame = 0; frame < numFrames; frame++) {
+    const off = frame * hopSize;
+    const re = new Float64Array(fftSize);
+    const im = new Float64Array(fftSize);
+    for (let i = 0; i < fftSize; i++) re[i] = data[off + i] * win[i];
+    fft(re, im);
+    for (let i = 0; i < halfN; i++) avgMag[i] += Math.sqrt(re[i]*re[i] + im[i]*im[i]);
+  }
+
+  const freqs = new Float64Array(halfN);
+  const mags = new Float64Array(halfN);
+  for (let i = 0; i < halfN; i++) {
+    freqs[i] = i * fs / fftSize;
+    // dB FS: FFT-bin amplitude relative to a full-scale sinusoid.
+    const amp = (avgMag[i] / numFrames) / Math.max(winSum / 2, 1e-12);
+    mags[i] = 20 * Math.log10(Math.max(amp, 1e-12));
+  }
+  return { freqs, magnitudes: mags };
+}
+
+/* Interpolate ILTASS onto arbitrary frequency axis */
+function interpolateILTASS(freqs) {
+  const result = new Float64Array(freqs.length);
+  // With 219 reference points, use binary search for efficiency
+  for (let i = 0; i < freqs.length; i++) {
+    const f = freqs[i];
+    if (f <= ILTASS_FREQS[0]) { result[i] = ILTASS_LEVELS[0]; continue; }
+    if (f >= ILTASS_FREQS[ILTASS_FREQS.length - 1]) { result[i] = ILTASS_LEVELS[ILTASS_LEVELS.length - 1]; continue; }
+    // Binary search for bracketing interval
+    let lo = 0, hi = ILTASS_FREQS.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (ILTASS_FREQS[mid] <= f) lo = mid; else hi = mid;
+    }
+    // Linear interpolation between lo and hi
+    const t = (f - ILTASS_FREQS[lo]) / (ILTASS_FREQS[hi] - ILTASS_FREQS[lo]);
+    result[i] = ILTASS_LEVELS[lo] + t * (ILTASS_LEVELS[hi] - ILTASS_LEVELS[lo]);
+  }
+  return result;
+}
+
+/* ===================================================================
+   WAV ENCODING
+   =================================================================== */
+function writeWavMono16(data, fs) {
+  const N = data.length;
+  const buffer = new ArrayBuffer(44 + N * 2);
+  const v = new DataView(buffer);
+  const w = (off, str) => { for (let i = 0; i < str.length; i++) v.setUint8(off + i, str.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + N * 2, true); w(8, 'WAVE');
+  w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, fs, true);
+  v.setUint32(28, fs * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, N * 2, true);
+  for (let i = 0; i < N; i++) {
+    let s = Math.max(-1, Math.min(1, data[i]));
+    v.setInt16(44 + i * 2, (s < 0 ? s * 0x8000 : s * 0x7FFF) | 0, true);
+  }
+  return new Blob([v], { type: 'audio/wav' });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ===================================================================
+   TABS
+   =================================================================== */
+window.switchTab = function(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  if (tab === 'record') {
+    document.querySelectorAll('.tab')[0].classList.add('active');
+    document.getElementById('tab-record').classList.add('active');
+  } else {
+    document.querySelectorAll('.tab')[1].classList.add('active');
+    document.getElementById('tab-upload').classList.add('active');
+  }
+};
+
+/* ===================================================================
+   RECORDING
+   =================================================================== */
+window.toggleRecord = async function() {
+  if (isRecording) { stopRecording(); return; }
+  try {
+    const ctx = await ensureCtx();
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordedChunks = [];
+    const source = ctx.createMediaStreamSource(mediaStream);
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+
+    mediaRecorder = new MediaRecorder(mediaStream);
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = processRecording;
+    mediaRecorder.start();
+
+    isRecording = true;
+    const btn = document.getElementById('rec-btn');
+    btn.textContent = '⏹ Stop'; btn.className = 'btn btn-red';
+    document.getElementById('rec-status').textContent = 'Recording...';
+    document.getElementById('play-rec-btn').disabled = true;
+    document.getElementById('save-rec-btn').disabled = true;
+    drawLiveWaveform();
+  } catch (err) {
+    document.getElementById('rec-status').textContent = 'Microphone access denied: ' + err.message;
+  }
+};
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+  isRecording = false;
+  cancelAnimationFrame(animFrame);
+  const btn = document.getElementById('rec-btn');
+  btn.textContent = '⏺ Re-record'; btn.className = 'btn btn-red';
+  document.getElementById('rec-status').textContent = 'Processing...';
+}
+
+async function processRecording() {
+  const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+  const ctx = await ensureCtx();
+  const ab = await blob.arrayBuffer();
+  const audioBuf = await ctx.decodeAudioData(ab);
+
+  const fs = audioBuf.sampleRate;
+  const N = audioBuf.length;
+  const mono = new Float32Array(N);
+  const ch = audioBuf.numberOfChannels;
+  if (ch === 1) { audioBuf.copyFromChannel(mono, 0); }
+  else { const tmp = new Float32Array(N); for (let c = 0; c < ch; c++) { audioBuf.copyFromChannel(tmp, c); for (let i = 0; i < N; i++) mono[i] += tmp[i] / ch; } }
+
+  speechBuffers = [{ data: mono, fs, name: 'recording.wav' }];
+  speechFs = fs;
+  concatenatedSpeech = mono;
+
+  const durSec = N / fs;
+  const dur = durSec.toFixed(1);
+  let recMsg = `Recorded ${dur}s at ${fs} Hz.`;
+  if (durSec > 15) {
+    recMsg += ' Because this is over 15 s, consider reducing superimpositions to about 5,000 for a faster demo.';
+  }
+  document.getElementById('rec-status').textContent = recMsg;
+  document.getElementById('play-rec-btn').disabled = false;
+  document.getElementById('save-rec-btn').disabled = false;
+
+  drawStaticWaveform(mono);
+  showStep2();
+}
+
+function drawLiveWaveform() {
+  if (!isRecording || !analyser) return;
+  const canvas = document.getElementById('waveform');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth; const h = canvas.offsetHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+
+  const buf = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteTimeDomainData(buf);
+
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+  ctx.lineWidth = 1.5; ctx.strokeStyle = '#5dade2'; ctx.beginPath();
+  const sl = w / buf.length;
+  for (let i = 0; i < buf.length; i++) {
+    const y = (buf[i] / 128.0) * h / 2;
+    i === 0 ? ctx.moveTo(0, y) : ctx.lineTo(i * sl, y);
+  }
+  ctx.stroke();
+  animFrame = requestAnimationFrame(drawLiveWaveform);
+}
+
+function drawStaticWaveform(data) {
+  const canvas = document.getElementById('waveform');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth || 600; const h = canvas.offsetHeight || 100;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+
+  ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, w, h);
+  ctx.lineWidth = 1; ctx.strokeStyle = '#5dade2'; ctx.beginPath();
+  const step = Math.max(1, Math.floor(data.length / w));
+  for (let x = 0; x < w; x++) {
+    const idx = Math.floor(x * data.length / w);
+    let mn = 1, mx = -1;
+    for (let j = 0; j < step; j++) { const v = data[idx+j] || 0; if (v < mn) mn = v; if (v > mx) mx = v; }
+    ctx.moveTo(x, (1 - mx) * h / 2); ctx.lineTo(x, (1 - mn) * h / 2);
+  }
+  ctx.stroke();
+}
+
+
+/* ===================================================================
+   FILE UPLOAD
+   =================================================================== */
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+
+window.handleFiles = async function(fileList) {
+  if (!fileList || fileList.length === 0) return;
+  const ctx = await ensureCtx();
+  const listEl = document.getElementById('file-list');
+
+  for (const file of fileList) {
+    try {
+      const ab = await file.arrayBuffer();
+      const audioBuf = await ctx.decodeAudioData(ab.slice(0));
+      const fs = audioBuf.sampleRate;
+      const N = audioBuf.length;
+      const mono = new Float32Array(N);
+      const ch = audioBuf.numberOfChannels;
+      if (ch === 1) { audioBuf.copyFromChannel(mono, 0); }
+      else { const tmp = new Float32Array(N); for (let c = 0; c < ch; c++) { audioBuf.copyFromChannel(tmp, c); for (let i = 0; i < N; i++) mono[i] += tmp[i] / ch; } }
+
+      speechBuffers.push({ data: mono, fs, name: file.name });
+
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      const dur = (N / fs).toFixed(1);
+      item.innerHTML = `<span class="name">${file.name}</span><span class="dur">${dur}s</span><button class="remove" onclick="removeFile(this, '${file.name}')">✕</button>`;
+      listEl.appendChild(item);
+    } catch (err) {
+      console.error('Failed to decode', file.name, err);
+    }
+  }
+
+  if (speechBuffers.length > 0) {
+    rebuildConcatenated();
+    showStep2();
+  }
+};
+
+window.removeFile = function(btn, name) {
+  speechBuffers = speechBuffers.filter(b => b.name !== name);
+  btn.closest('.file-item').remove();
+  if (speechBuffers.length > 0) rebuildConcatenated();
+  else { document.getElementById('step2').classList.add('hidden'); }
+};
+
+function rebuildConcatenated() {
+  // Use the sample rate of the first buffer (AudioContext resamples on decode)
+  speechFs = speechBuffers[0].fs;
+  const totalLen = speechBuffers.reduce((s, b) => s + b.data.length, 0);
+  concatenatedSpeech = new Float32Array(totalLen);
+  let offset = 0;
+  for (const b of speechBuffers) {
+    concatenatedSpeech.set(b.data, offset);
+    offset += b.data.length;
+  }
+}
+
+function showStep2() {
+  document.getElementById('step2').classList.remove('hidden');
+  document.getElementById('noise-result').classList.add('hidden');
+  document.getElementById('step3').classList.add('hidden');
+  document.getElementById('filter-result').classList.add('hidden');
+}
+
+/* ===================================================================
+   NOISE GENERATION
+   =================================================================== */
+window.generateNoise = async function() {
+  if (!concatenatedSpeech) return;
+
+  const genBtn = document.getElementById('gen-btn');
+  genBtn.disabled = true;
+  const progWrap = document.getElementById('gen-progress-wrap');
+  const progBar = document.getElementById('gen-progress');
+  progWrap.classList.remove('hidden');
+  progBar.style.width = '0%';
+  document.getElementById('gen-status').textContent = 'Applying rise/fall envelope...';
+
+  const fs = speechFs;
+  const nSuper = getSuperimpositionCount();
+  const rfMs = 30;
+  const noiseLenMs = 10000;
+
+  // Apply rise/fall to each buffer
+  const rfSamp = Math.round(rfMs * fs / 1000);
+  const rampedBuffers = speechBuffers.map(b => {
+    const r = new Float32Array(b.data);
+    const rf = Math.min(rfSamp, Math.floor(r.length / 2));
+    for (let i = 0; i < rf; i++) r[i] *= i / (rf - 1 || 1);
+    for (let i = 0; i < rf; i++) r[r.length - rf + i] *= 1 - i / (rf - 1 || 1);
+    return r;
+  });
+
+  // Build balanced schedule
+  const nFiles = rampedBuffers.length;
+  const rounds = Math.ceil(nSuper / nFiles);
+  const schedule = [];
+  for (let r = 0; r < rounds; r++) {
+    const arr = Array.from({ length: nFiles }, (_, i) => i);
+    for (let i = arr.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    schedule.push(...arr);
+  }
+
+  const L = Math.round(noiseLenMs * fs / 1000);
+  const out = new Float32Array(L);
+
+  document.getElementById('gen-status').textContent = `Superimposing ${nSuper} copies...`;
+  const CHUNK = 100;
+  for (let k = 0; k < nSuper; k++) {
+    const s = rampedBuffers[schedule[k]];
+    const start = (Math.random() * L) | 0;
+    for (let n = 0; n < s.length; n++) out[(start + n) % L] += s[n];
+    if (k % CHUNK === 0) {
+      const pct = (k / nSuper * 100).toFixed(0);
+      progBar.style.width = pct + '%';
+      progBar.setAttribute('aria-valuenow', pct);
+      await new Promise(requestAnimationFrame);
+    }
+  }
+
+  normalisePeak(out, 0.98);
+  progBar.style.width = '100%';
+  noiseBuffer = out;
+  noiseFs = fs;
+
+  document.getElementById('gen-status').textContent = `Done. Peak=${peakDbFS(out)}, RMS=${rmsDbFS(out)}`;
+  genBtn.disabled = false;
+
+  // Show spectrum comparison
+  showNoiseResult();
+};
+
+function showNoiseResult() {
+  const speechSpec = computeLTAS(concatenatedSpeech, speechFs);
+  const noiseSpec = computeLTAS(noiseBuffer, noiseFs);
+
+  // Compute alignment offset (mean dB difference over 100–8000 Hz)
+  let sumDiff = 0, cnt = 0;
+  for (let i = 0; i < speechSpec.freqs.length; i++) {
+    const f = speechSpec.freqs[i];
+    if (f >= 100 && f <= 8000) { sumDiff += speechSpec.magnitudes[i] - noiseSpec.magnitudes[i]; cnt++; }
+  }
+  const offsetDb = cnt > 0 ? sumDiff / cnt : 0;
+  const noiseShifted = new Float64Array(noiseSpec.magnitudes.length);
+  for (let i = 0; i < noiseShifted.length; i++) noiseShifted[i] = noiseSpec.magnitudes[i] + offsetDb;
+
+  const sign = offsetDb >= 0 ? '+' : '';
+  document.getElementById('noise-info').textContent =
+    `Noise spectrum shifted by ${sign}${offsetDb.toFixed(1)} dB to align with speech spectrum.`;
+  document.getElementById('legend-speech').textContent = `Speech (RMS ${rmsDbFS(concatenatedSpeech)})`;
+  document.getElementById('legend-noise').textContent = `Noise, shifted to align (RMS ${rmsDbFS(noiseBuffer)})`;
+
+  drawSpectrum('spectrum1', [
+    { freqs: speechSpec.freqs, mags: speechSpec.magnitudes, color: '#5dade2', width: 2 },
+    { freqs: speechSpec.freqs, mags: noiseShifted, color: '#eb6200', width: 2 }
+  ]);
+
+  document.getElementById('noise-result').classList.remove('hidden');
+  document.getElementById('step3').classList.remove('hidden');
+}
+
+/* ===================================================================
+   ILTASS FILTERING
+   =================================================================== */
+function makeILTASSFilename(name) {
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  return base + '_ILTASS-corrected.wav';
+}
+
+window.applyILTASS = async function() {
+  if (!concatenatedSpeech || !noiseBuffer) return;
+
+  const filterBtn = document.getElementById('filter-btn');
+  filterBtn.disabled = true;
+  const progWrap = document.getElementById('filter-progress-wrap');
+  const progBar = document.getElementById('filter-progress');
+  progWrap.classList.remove('hidden');
+  progBar.style.width = '0%';
+  document.getElementById('filter-status').textContent = 'Computing spectral correction...';
+  await new Promise(requestAnimationFrame);
+
+  const fs = speechFs;
+
+  // 1. Compute LTAS of the noise (which represents the speech spectrum shape)
+  const noiseSpec = computeLTAS(noiseBuffer, noiseFs);
+
+  // 2. Interpolate ILTASS onto the same frequency axis
+  const iltassInterp = interpolateILTASS(noiseSpec.freqs);
+
+  // 3. Compute correction curve (dB): what we need to add at each frequency
+  //    correction = ILTASS_target - noise_spectrum
+  //    But first align them: shift ILTASS so its mean matches the noise mean over 100-8000 Hz
+  let noiseMean = 0, iltassMean = 0, cnt = 0;
+  for (let i = 0; i < noiseSpec.freqs.length; i++) {
+    const f = noiseSpec.freqs[i];
+    if (f >= 100 && f <= 8000) {
+      noiseMean += noiseSpec.magnitudes[i];
+      iltassMean += iltassInterp[i];
+      cnt++;
+    }
+  }
+  noiseMean /= cnt; iltassMean /= cnt;
+  const iltassShift = noiseMean - iltassMean;
+
+  const correctionDb = new Float64Array(noiseSpec.freqs.length);
+  for (let i = 0; i < correctionDb.length; i++) {
+    correctionDb[i] = (iltassInterp[i] + iltassShift) - noiseSpec.magnitudes[i];
+    // Limit extreme corrections
+    correctionDb[i] = Math.max(-30, Math.min(30, correctionDb[i]));
+  }
+
+  // 4. Build frequency-domain filter (magnitude only, zero phase)
+  const fftSize = (noiseSpec.freqs.length - 1) * 2; // reconstruct fftSize
+  const filterMag = new Float64Array(fftSize);
+  for (let i = 0; i < noiseSpec.freqs.length; i++) {
+    const gain = Math.pow(10, correctionDb[i] / 20);
+    filterMag[i] = gain;
+    if (i > 0 && i < fftSize / 2) filterMag[fftSize - i] = gain; // mirror
+  }
+
+  document.getElementById('filter-status').textContent = 'Applying filter to speech files...';
+  progBar.style.width = '25%';
+  await new Promise(requestAnimationFrame);
+
+  // 5. Apply filter to each speech buffer using overlap-add
+  filteredSpeechBuffers = [];
+  for (let bi = 0; bi < speechBuffers.length; bi++) {
+    const src = speechBuffers[bi].data;
+    const out = applyFreqFilter(src, filterMag, fftSize);
+    normalisePeak(out, 0.98);
+    filteredSpeechBuffers.push({ data: out, fs: speechBuffers[bi].fs, name: makeILTASSFilename(speechBuffers[bi].name) });
+
+    progBar.style.width = (25 + 25 * (bi + 1) / speechBuffers.length).toFixed(0) + '%';
+    await new Promise(requestAnimationFrame);
+  }
+
+  // Rebuild concatenated filtered speech
+  const totalLen = filteredSpeechBuffers.reduce((s, b) => s + b.data.length, 0);
+  filteredConcatenated = new Float32Array(totalLen);
+  let offset = 0;
+  for (const b of filteredSpeechBuffers) { filteredConcatenated.set(b.data, offset); offset += b.data.length; }
+
+  // 6. Generate noise from filtered speech
+  document.getElementById('filter-status').textContent = 'Generating ILTASS-shaped noise...';
+  progBar.style.width = '55%';
+  await new Promise(requestAnimationFrame);
+
+  const nSuper = getSuperimpositionCount();
+  const rfMs = 30;
+  const rfSamp = Math.round(rfMs * fs / 1000);
+  const rampedFiltered = filteredSpeechBuffers.map(b => {
+    const r = new Float32Array(b.data);
+    const rf = Math.min(rfSamp, Math.floor(r.length / 2));
+    for (let i = 0; i < rf; i++) r[i] *= i / (rf - 1 || 1);
+    for (let i = 0; i < rf; i++) r[r.length - rf + i] *= 1 - i / (rf - 1 || 1);
+    return r;
+  });
+
+  const nFiles = rampedFiltered.length;
+  const rounds = Math.ceil(nSuper / nFiles);
+  const schedule = [];
+  for (let r = 0; r < rounds; r++) {
+    const arr = Array.from({ length: nFiles }, (_, i) => i);
+    for (let i = arr.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    schedule.push(...arr);
+  }
+
+  const L = Math.round(10000 * fs / 1000);
+  const noiseOut = new Float32Array(L);
+  const CHUNK = 100;
+  for (let k = 0; k < nSuper; k++) {
+    const s = rampedFiltered[schedule[k]];
+    const start = (Math.random() * L) | 0;
+    for (let n = 0; n < s.length; n++) noiseOut[(start + n) % L] += s[n];
+    if (k % CHUNK === 0) {
+      const pct = (55 + 40 * k / nSuper).toFixed(0);
+      progBar.style.width = pct + '%';
+      await new Promise(requestAnimationFrame);
+    }
+  }
+  normalisePeak(noiseOut, 0.98);
+  filteredNoiseBuffer = noiseOut;
+  filteredNoiseFs = fs;
+
+  progBar.style.width = '100%';
+  document.getElementById('filter-status').textContent = 'Done.';
+  filterBtn.disabled = false;
+
+  showFilterResult(noiseSpec, correctionDb, iltassInterp, iltassShift);
+};
+
+function nextPow2(n) {
+  let p = 1;
+  while (p < n) p <<= 1;
+  return p;
+}
+
+function applyFreqFilter(signal, filterMag, filterFftSize) {
+  // Apply one fixed zero-phase spectral correction to the whole file.
+  // The previous short-block WOLA version could sound phasey/comb-filtered because
+  // every analysis frame was independently windowed, filtered, and recombined.
+  const outLen = signal.length;
+  const fftSize = nextPow2(outLen);
+  const halfN = fftSize / 2 + 1;
+  const filterHalf = filterFftSize / 2 + 1;
+
+  const re = new Float64Array(fftSize);
+  const im = new Float64Array(fftSize);
+  for (let i = 0; i < outLen; i++) re[i] = signal[i];
+
+  fft(re, im);
+
+  for (let k = 0; k < halfN; k++) {
+    const srcPos = k * (filterHalf - 1) / Math.max(1, halfN - 1);
+    const lo = Math.floor(srcPos);
+    const hi = Math.min(filterHalf - 1, lo + 1);
+    const frac = srcPos - lo;
+    const gain = filterMag[lo] + (filterMag[hi] - filterMag[lo]) * frac;
+
+    re[k] *= gain;
+    im[k] *= gain;
+    if (k > 0 && k < fftSize / 2) {
+      const mirror = fftSize - k;
+      re[mirror] *= gain;
+      im[mirror] *= gain;
+    }
+  }
+
+  ifft(re, im);
+
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) out[i] = re[i];
+  return out;
+}
+
+function showFilterResult(origNoiseSpec, correctionDb, iltassInterp, iltassShift) {
+  const origSpeechSpec = computeLTAS(concatenatedSpeech, speechFs);
+  const filteredSpec = computeLTAS(filteredConcatenated, speechFs);
+  const filteredNoiseSpec = computeLTAS(filteredNoiseBuffer, filteredNoiseFs);
+
+  // Align ILTASS for display (shifted to match the original noise level)
+  const iltassDisplay = new Float64Array(origNoiseSpec.freqs.length);
+  for (let i = 0; i < iltassDisplay.length; i++) {
+    iltassDisplay[i] = iltassInterp[i] + iltassShift;
+  }
+
+  // Align filtered noise and filtered speech to original speech for comparison
+  let shiftNoise = 0, shiftFiltered = 0, cnt = 0;
+  for (let i = 0; i < origSpeechSpec.freqs.length; i++) {
+    const f = origSpeechSpec.freqs[i];
+    if (f >= 100 && f <= 8000) {
+      shiftNoise += origSpeechSpec.magnitudes[i] - filteredNoiseSpec.magnitudes[i];
+      shiftFiltered += origSpeechSpec.magnitudes[i] - filteredSpec.magnitudes[i];
+      cnt++;
+    }
+  }
+  shiftNoise /= cnt; shiftFiltered /= cnt;
+
+  const noiseShifted = new Float64Array(filteredNoiseSpec.magnitudes.length);
+  const filtShifted = new Float64Array(filteredSpec.magnitudes.length);
+  for (let i = 0; i < noiseShifted.length; i++) noiseShifted[i] = filteredNoiseSpec.magnitudes[i] + shiftNoise;
+  for (let i = 0; i < filtShifted.length; i++) filtShifted[i] = filteredSpec.magnitudes[i] + shiftFiltered;
+
+  const maxCorr = Math.max(...Array.from(correctionDb).map(Math.abs).filter((_, i) => origNoiseSpec.freqs[i] >= 100 && origNoiseSpec.freqs[i] <= 8000));
+  document.getElementById('filter-info').textContent =
+    `Spectral correction applied. Max adjustment: ±${maxCorr.toFixed(1)} dB. ` +
+    `Filtered noise: Peak=${peakDbFS(filteredNoiseBuffer)}, RMS=${rmsDbFS(filteredNoiseBuffer)}`;
+
+  spectrum2Traces = [
+    { id: 'original-speech', label: `Original speech (RMS ${rmsDbFS(concatenatedSpeech)})`, checked: true, freqs: origSpeechSpec.freqs, mags: origSpeechSpec.magnitudes, color: '#5dade2', width: 1.5, dash: [4, 3] },
+    { id: 'iltass-target', label: `ILTASS target (RMS ${rmsDbFS(filteredNoiseBuffer)})`, checked: true, freqs: origNoiseSpec.freqs, mags: iltassDisplay, color: '#8a3ffc', width: 2.5 },
+    { id: 'filtered-speech', label: `Filtered speech (RMS ${rmsDbFS(filteredConcatenated)})`, checked: true, freqs: origSpeechSpec.freqs, mags: filtShifted, color: '#009d9a', width: 2 },
+    { id: 'new-noise', label: `New noise (RMS ${rmsDbFS(filteredNoiseBuffer)})`, checked: false, freqs: origSpeechSpec.freqs, mags: noiseShifted, color: '#eb6200', width: 2 }
+  ];
+  renderSpectrum2Toggles();
+  redrawSpectrum2();
+
+  document.getElementById('filter-result').classList.remove('hidden');
+}
+
+let spectrum2Traces = [];
+
+function renderSpectrum2Toggles() {
+  const wrap = document.getElementById('spectrum2-toggles');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  for (const t of spectrum2Traces) {
+    const label = document.createElement('label');
+    label.className = 'trace-toggle';
+    label.innerHTML = `<input type="checkbox" data-trace-id="${t.id}" ${t.checked ? 'checked' : ''}>` +
+      `<span class="legend-swatch" style="background:${t.color};"></span>` +
+      `<span>${t.label}</span>`;
+    label.querySelector('input').addEventListener('change', (e) => {
+      t.checked = e.target.checked;
+      redrawSpectrum2();
+    });
+    wrap.appendChild(label);
+  }
+}
+
+function redrawSpectrum2() {
+  const visible = spectrum2Traces.filter(t => t.checked);
+  drawSpectrum('spectrum2', visible.length ? visible : spectrum2Traces.slice(0, 1));
+}
+
+/* ===================================================================
+   SPECTRUM DRAWING
+   =================================================================== */
+function drawSpectrum(canvasId, traces) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth || 600;
+  const h = canvas.offsetHeight || 260;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+
+  if (!traces.length || !traces[0].freqs || traces[0].freqs.length < 2) {
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#777'; ctx.font = '14px IBM Plex Sans'; ctx.textAlign = 'center';
+    ctx.fillText('No data', w/2, h/2);
+    return;
+  }
+
+  // DTTLabClass-style plot: clean white plotting area, light grid, log-frequency x-axis.
+  // The trace is still drawn to 16 kHz, but the Y-axis is scaled only from the
+  // reliable speech band below 13 kHz so the steep microphone/device roll-off at
+  // the far right does not compress the useful part of the spectrum.
+  const pad = { top: 14, right: 18, bottom: 42, left: 58 };
+  const pw = w - pad.left - pad.right;
+  const ph = h - pad.top - pad.bottom;
+
+  const fMin = 50;
+  const fMax = 16000;          // visible x-axis limit
+  const yScaleMaxFreq = 13000; // exclude terminal roll-off from y-axis limits
+  const logMin = Math.log10(fMin), logMax = Math.log10(fMax);
+
+  let dbMin = Infinity, dbMax = -Infinity;
+  for (const t of traces) {
+    for (let i = 0; i < t.freqs.length; i++) {
+      const f = t.freqs[i];
+      const db = t.mags[i];
+      if (f >= fMin && f <= yScaleMaxFreq && Number.isFinite(db)) {
+        dbMin = Math.min(dbMin, db);
+        dbMax = Math.max(dbMax, db);
+      }
+    }
+  }
+  if (!Number.isFinite(dbMin) || !Number.isFinite(dbMax)) { dbMin = -80; dbMax = 40; }
+
+  // Round outward to neat 10 dB ticks and keep a little breathing room.
+  dbMin = Math.floor((dbMin - 3) / 10) * 10;
+  dbMax = Math.ceil((dbMax + 3) / 10) * 10;
+  if (dbMax - dbMin < 40) {
+    const mid = (dbMax + dbMin) / 2;
+    dbMin = Math.floor((mid - 20) / 10) * 10;
+    dbMax = Math.ceil((mid + 20) / 10) * 10;
+  }
+
+  const xOf = f => pad.left + (Math.log10(f) - logMin) / (logMax - logMin) * pw;
+  const yOf = db => pad.top + (1 - (db - dbMin) / (dbMax - dbMin)) * ph;
+  const clipY = y => Math.max(pad.top, Math.min(pad.top + ph, y));
+
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, w, h);
+
+  // Gridlines — slightly stronger horizontal grid, very light vertical grid.
+  const xTicks = [100, 200, 500, 1000, 2000, 5000, 10000];
+  ctx.lineWidth = 0.7;
+  for (const f of xTicks) {
+    if (f >= fMin && f <= fMax) {
+      const x = xOf(f);
+      ctx.strokeStyle = '#eeeeee';
+      ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ph); ctx.stroke();
+    }
+  }
+  for (let db = dbMin; db <= dbMax; db += 10) {
+    const y = yOf(db);
+    ctx.strokeStyle = '#e6e6e6';
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + pw, y); ctx.stroke();
+  }
+
+  // Axes
+  ctx.strokeStyle = '#777'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, pad.top + ph);
+  ctx.lineTo(pad.left + pw, pad.top + ph);
+  ctx.stroke();
+
+  // Tick labels
+  ctx.fillStyle = '#666';
+  ctx.font = '11px IBM Plex Sans, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (const f of xTicks) {
+    if (f >= fMin && f <= fMax) ctx.fillText(f >= 1000 ? (f/1000) + 'k' : f, xOf(f), pad.top + ph + 8);
+  }
+  ctx.font = '12px IBM Plex Sans, sans-serif';
+  ctx.fillText('Frequency (Hz)', pad.left + pw / 2, h - 18);
+
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.font = '11px IBM Plex Sans, sans-serif';
+  for (let db = dbMin; db <= dbMax; db += 10) ctx.fillText(db, pad.left - 7, yOf(db));
+  ctx.save();
+  ctx.translate(15, pad.top + ph / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '12px IBM Plex Sans, sans-serif';
+  ctx.fillText('Amplitude (dB FS)', 0, 0);
+  ctx.restore();
+
+  // Clip traces to the plotting rectangle so out-of-scale roll-off does not draw over labels.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(pad.left, pad.top, pw, ph);
+  ctx.clip();
+
+  for (const t of traces) {
+    ctx.strokeStyle = t.color;
+    ctx.lineWidth = t.width || 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.setLineDash(t.dash || []);
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < t.freqs.length; i++) {
+      const f = t.freqs[i], db = t.mags[i];
+      if (f >= fMin && f <= fMax && Number.isFinite(db)) {
+        const x = xOf(f), y = clipY(yOf(db));
+        started ? ctx.lineTo(x, y) : (ctx.moveTo(x, y), started = true);
+      }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+
+/* ===================================================================
+   PLAYBACK
+   =================================================================== */
+function stopSource(src) {
+  if (src) { try { src.stop(); } catch(e) {} }
+}
+
+window.playRecording = async function() {
+  const btn = document.getElementById('play-rec-btn');
+  if (recordingIsPlaying) {
+    stopSource(recordingSrc);
+    recordingSrc = null;
+    recordingIsPlaying = false;
+    btn.textContent = '▶ Play';
+    return;
+  }
+  if (!concatenatedSpeech) return;
+  const ctx = await ensureCtx();
+  const buf = ctx.createBuffer(1, concatenatedSpeech.length, speechFs);
+  buf.copyToChannel(concatenatedSpeech, 0);
+  recordingSrc = ctx.createBufferSource();
+  recordingSrc.buffer = buf;
+  recordingSrc.connect(ctx.destination);
+  recordingSrc.onended = () => {
+    recordingIsPlaying = false;
+    recordingSrc = null;
+    btn.textContent = '▶ Play';
+  };
+  recordingSrc.start();
+  recordingIsPlaying = true;
+  btn.textContent = '⏹ Stop';
+};
+
+window.playSpeech = async function() {
+  const btn = document.getElementById('play-speech-btn');
+  if (speechIsPlaying) {
+    stopSource(speechSrc);
+    speechSrc = null;
+    speechIsPlaying = false;
+    btn.textContent = '▶ Play speech';
+    return;
+  }
+  if (!concatenatedSpeech) return;
+  const ctx = await ensureCtx();
+  const buf = ctx.createBuffer(1, concatenatedSpeech.length, speechFs);
+  buf.copyToChannel(concatenatedSpeech, 0);
+  speechSrc = ctx.createBufferSource();
+  speechSrc.buffer = buf;
+  speechSrc.connect(ctx.destination);
+  speechSrc.onended = () => {
+    speechIsPlaying = false;
+    speechSrc = null;
+    btn.textContent = '▶ Play speech';
+  };
+  speechSrc.start();
+  speechIsPlaying = true;
+  btn.textContent = '⏹ Stop speech';
+};
+
+window.toggleNoise = async function() {
+  const btn = document.getElementById('play-noise-btn');
+  if (noiseIsPlaying) {
+    stopSource(noiseSrc);
+    noiseSrc = null;
+    noiseIsPlaying = false;
+    btn.textContent = '▶ Play noise (looped)'; btn.className = 'btn btn-green';
+    return;
+  }
+  if (!noiseBuffer) return;
+  const ctx = await ensureCtx();
+  const buf = ctx.createBuffer(1, noiseBuffer.length, noiseFs);
+  buf.copyToChannel(noiseBuffer, 0);
+  noiseSrc = ctx.createBufferSource(); noiseSrc.buffer = buf; noiseSrc.loop = true;
+  noiseSrc.connect(ctx.destination); noiseSrc.start();
+  noiseIsPlaying = true;
+  btn.textContent = '⏹ Stop noise'; btn.className = 'btn btn-orange';
+};
+
+window.toggleFilteredNoise = async function() {
+  const btn = document.getElementById('play-filtered-btn');
+  if (filteredNoiseIsPlaying) {
+    stopSource(filteredNoiseSrc);
+    filteredNoiseSrc = null;
+    filteredNoiseIsPlaying = false;
+    btn.textContent = '▶ Play ILTASS noise (looped)'; btn.className = 'btn btn-teal';
+    return;
+  }
+  if (!filteredNoiseBuffer) return;
+  const ctx = await ensureCtx();
+  const buf = ctx.createBuffer(1, filteredNoiseBuffer.length, filteredNoiseFs);
+  buf.copyToChannel(filteredNoiseBuffer, 0);
+  filteredNoiseSrc = ctx.createBufferSource(); filteredNoiseSrc.buffer = buf; filteredNoiseSrc.loop = true;
+  filteredNoiseSrc.connect(ctx.destination); filteredNoiseSrc.start();
+  filteredNoiseIsPlaying = true;
+  btn.textContent = '⏹ Stop ILTASS noise'; btn.className = 'btn btn-orange';
+};
+
+window.playFilteredSpeech = async function() {
+  const btn = document.getElementById('play-filtered-speech-btn');
+  if (filteredSpeechIsPlaying) {
+    stopSource(filteredSpeechSrc);
+    filteredSpeechSrc = null;
+    filteredSpeechIsPlaying = false;
+    btn.textContent = '▶ Play filtered speech';
+    return;
+  }
+  if (!filteredConcatenated) return;
+  const ctx = await ensureCtx();
+  const buf = ctx.createBuffer(1, filteredConcatenated.length, speechFs);
+  buf.copyToChannel(filteredConcatenated, 0);
+  filteredSpeechSrc = ctx.createBufferSource();
+  filteredSpeechSrc.buffer = buf;
+  filteredSpeechSrc.connect(ctx.destination);
+  filteredSpeechSrc.onended = () => {
+    filteredSpeechIsPlaying = false;
+    filteredSpeechSrc = null;
+    btn.textContent = '▶ Play filtered speech';
+  };
+  filteredSpeechSrc.start();
+  filteredSpeechIsPlaying = true;
+  btn.textContent = '⏹ Stop filtered speech';
+};
+
+/* ===================================================================
+   DOWNLOADS
+   =================================================================== */
+
+window.downloadRecording = function() {
+  if (!concatenatedSpeech || !speechFs) return;
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  downloadBlob(writeWavMono16(concatenatedSpeech, speechFs), `recorded_speech_${stamp}.wav`);
+};
+
+window.downloadNoise = function() {
+  if (!noiseBuffer) return;
+  downloadBlob(writeWavMono16(noiseBuffer, noiseFs), 'speech_weighted_noise.wav');
+};
+
+window.downloadFilteredNoise = function() {
+  if (!filteredNoiseBuffer) return;
+  downloadBlob(writeWavMono16(filteredNoiseBuffer, filteredNoiseFs), 'iltass_shaped_noise.wav');
+};
+
+window.downloadFilteredSpeech = function() {
+  if (filteredSpeechBuffers.length === 1) {
+    downloadBlob(writeWavMono16(filteredSpeechBuffers[0].data, filteredSpeechBuffers[0].fs), filteredSpeechBuffers[0].name);
+  } else {
+    // Download each file individually
+    for (const b of filteredSpeechBuffers) {
+      downloadBlob(writeWavMono16(b.data, b.fs), b.name);
+    }
+  }
+};
+
+})();
+</script>
+
+</body>
+</html>
