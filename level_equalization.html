@@ -234,7 +234,7 @@
 
   .file-row {
     display: grid;
-    grid-template-columns: 26px 1fr 52px 62px 62px 62px 62px;
+    grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px;
     align-items: center;
     padding: 5px 8px;
     background: var(--surface);
@@ -257,7 +257,7 @@
 
   .file-header {
     display: grid;
-    grid-template-columns: 26px 1fr 52px 62px 62px 62px 62px;
+    grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px;
     padding: 3px 8px;
     gap: 6px;
     font-size: 9px;
@@ -267,6 +267,37 @@
   }
 
   .file-header span:nth-child(n+3) { text-align: right; }
+
+  .group-header {
+    display: grid;
+    padding: 0 8px;
+    gap: 6px;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    margin-bottom: 0;
+  }
+
+  .group-label {
+    text-align: center;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 4px 0 2px;
+    border-bottom: 2px solid currentColor;
+  }
+
+  .group-sep {
+    width: 4px;
+  }
+
+  .col-sep {
+    width: 4px;
+    background: var(--border);
+    border-radius: 1px;
+    justify-self: center;
+    align-self: stretch;
+    opacity: 0.5;
+  }
 
   .summary-box {
     background: var(--surface2);
@@ -585,6 +616,25 @@ const K_COEFFS = {
 function getKCoeffs(sr) {
   if (K_COEFFS[sr]) return K_COEFFS[sr];
   return Math.abs(sr - 44100) <= Math.abs(sr - 48000) ? K_COEFFS[44100] : K_COEFFS[48000];
+}
+
+// Evaluate K-weighting magnitude in dB at a given frequency
+// by computing the biquad frequency response analytically via z-transform
+function kWeightDB(freq, sr, coeffs) {
+  const omega = 2 * Math.PI * freq / sr;
+  const cosW = Math.cos(omega), cos2W = Math.cos(2 * omega);
+  const sinW = Math.sin(omega), sin2W = Math.sin(2 * omega);
+
+  function biquadMagSq(c) {
+    const numRe = c.b0 + c.b1 * cosW + c.b2 * cos2W;
+    const numIm = -(c.b1 * sinW + c.b2 * sin2W);
+    const denRe = 1 + c.a1 * cosW + c.a2 * cos2W;
+    const denIm = -(c.a1 * sinW + c.a2 * sin2W);
+    return (numRe*numRe + numIm*numIm) / (denRe*denRe + denIm*denIm);
+  }
+
+  const magSq = biquadMagSq(coeffs.s1) * biquadMagSq(coeffs.s2);
+  return 10 * Math.log10(Math.max(magSq, 1e-20));
 }
 
 function applyBiquad(input, c) {
@@ -1132,9 +1182,21 @@ function renderUI() {
 
   document.getElementById('mainLayout').innerHTML = `
     <div class="results-panel">
-      <div class="file-header" style="grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 52px 52px 52px 52px 52px 52px;">
+      <div class="group-header" style="grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px;">
+        <span></span><span></span><span></span>
+        <span class="group-label" style="grid-column: span 4; color:${colorVar};">${{A:'A-weighted',MAF:'MAF-weighted',None:'Unweighted'}[currentWeighting]}</span>
+        <span class="group-sep"></span>
+        <span class="group-label" style="grid-column: span 3; color:var(--text-dim);">LUFS (K-weighted)</span>
+        <span class="group-sep"></span>
+        <span class="group-label" style="grid-column: span 3; color:var(--text-dim);">Unweighted</span>
+      </div>
+      <div class="file-header" style="grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px;">
         <span>#</span><span>File</span><span>Len</span>
-        <span>Mom</span><span>P90</span><span>G.Mean</span><span>Mean</span><span>LU.M</span><span>LU.ST</span><span>LU.I</span><span>Peak</span><span>TPk</span><span>Gain</span>
+        <span>Mom</span><span>P90</span><span>G.Mean</span><span>Mean</span>
+        <span class="col-sep"></span>
+        <span>LU.M</span><span>LU.ST</span><span>LU.I</span>
+        <span class="col-sep"></span>
+        <span>Peak</span><span>TPk</span><span>Gain</span>
       </div>
       <div class="file-list" id="fileList"></div>
     </div>
@@ -1161,6 +1223,7 @@ function renderUI() {
           <div class="legend-item"><div class="legend-dot" style="background:var(--human-orange)"></div><span style="color:var(--text-dim)">A-weight</span></div>
           <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div><span style="color:var(--text-dim)">MAF</span></div>
           <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div><span style="color:var(--text-dim)">None</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:#8a3ffc"></div><span style="color:var(--text-dim)">K-weight (LUFS)</span></div>
         </div>
         <canvas id="curveCanvas" height="160"></canvas>
       </div>
@@ -1186,7 +1249,7 @@ function renderUI() {
   sorted.forEach((f, i) => {
     const row = document.createElement('div');
     row.className = 'file-row';
-    row.style.gridTemplateColumns = '26px 1fr 44px 52px 52px 52px 52px 52px 52px 52px 52px';
+    row.style.gridTemplateColumns = '26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px';
     const gs = f.gain >= 0 ? '+' : '';
     const gc = Math.abs(f.gain) > 3 ? 'var(--gold)' : 'var(--text-dim)';
     const cls = k => gainSource === k ? 'src' : 'nosrc';
@@ -1198,9 +1261,11 @@ function renderUI() {
       <span class="metric ${cls('p90')}">${f.p90Level.toFixed(1)}</span>
       <span class="metric ${cls('gatedMean')}">${f.gatedMeanLevel.toFixed(1)}</span>
       <span class="metric ${cls('mean')}">${f.meanMomentary.toFixed(1)}</span>
+      <span class="col-sep"></span>
       <span class="metric ${cls('lufs_mom')}">${f.lufsMomentary.toFixed(1)}</span>
       <span class="metric nosrc">${f.lufsShortTerm.toFixed(1)}</span>
       <span class="metric ${cls('lufs_int')}">${f.lufsIntegrated.toFixed(1)}</span>
+      <span class="col-sep"></span>
       <span class="metric ${cls('peak')}">${f.peakDB.toFixed(1)}</span>
       <span class="metric dim">${f.truePeakDB.toFixed(1)}</span>
       <span class="metric gain-col" style="color:${gc}">${gs}${f.gain.toFixed(1)}</span>
@@ -1259,6 +1324,18 @@ function drawCurves() {
   // None / unweighted reference
   ctx.strokeStyle='#198038';ctx.lineWidth=1.5;ctx.globalAlpha=currentWeighting==='None'?1:0.25;
   ctx.beginPath();ctx.moveTo(xP(20),yP(0));ctx.lineTo(xP(20000),yP(0));ctx.stroke();
+
+  // K-weighting (from biquad coefficients, evaluated at 44100 Hz)
+  ctx.globalAlpha = gainSource.startsWith('lufs') ? 1 : 0.35;
+  ctx.strokeStyle='#8a3ffc';ctx.lineWidth=1.5;
+  ctx.beginPath();
+  const kCoeffs = K_COEFFS[44100];
+  freqs.forEach((f,i)=>{
+    const db = kWeightDB(f, 44100, kCoeffs);
+    const y = yP(db);
+    if(y>=pad.top&&y<=h-pad.bottom) ctx[i===0?'moveTo':'lineTo'](xP(f),y);
+  });
+  ctx.stroke();
 
   ctx.globalAlpha=0.4;ctx.strokeStyle='#7a8fa3';ctx.lineWidth=0.5;ctx.setLineDash([3,3]);
   ctx.beginPath();ctx.moveTo(pad.left,yP(0));ctx.lineTo(w-pad.right,yP(0));ctx.stroke();
