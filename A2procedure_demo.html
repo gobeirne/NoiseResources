@@ -13,6 +13,24 @@
 	.ResultsPlotClass {
 	  max-width: 800px;
 	}
+    .ghosted {
+      opacity: 0.35;
+    }
+    .mode-button {
+      border: 1px solid #8d8d8d;
+      background: #f4f4f4;
+      color: #161616;
+      border-radius: 4px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    .mode-button.active {
+      background: #0f62fe;
+      color: white;
+      border-color: #0f62fe;
+      font-weight: 700;
+      box-shadow: 0 0 0 2px rgba(15, 98, 254, 0.2);
+    }
 
     /* Header & footer styles */
     body { font-family: 'IBM Plex Sans', -apple-system, system-ui, sans-serif; margin: 0; padding: 0; }
@@ -56,16 +74,38 @@
     <form class=" " action="index.html" method="post">
 		Number of words per sentence: <input type="number" step="1" class="InputClass" id="WordsPerSentence" value="5" /><br>
 		Number of options per word: <input type="number" step="1" class="InputClass" id="OptionsPerWord" value="10" /><br>
-		SRT of simulated listener (dB SNR):  <input type="number" step="1" class="InputClass" id="SimSRT" value="-15" /><br>
-		Slope of simulated listener: <input type="number" step="0.01" class="InputClass" id="SimSlope" value="0.12" />	<br>
+				Slope of simulated listener:
+<input type="range" min="0.01" max="0.5" step="0.01" id="SimSlopeSlider" value="0.12" style="width:220px;">
+<input type="number" step="0.01" class="InputClass" id="SimSlope" value="0.12" />
+<br>
+SRT of simulated listener (dB SNR):
+<input type="range" min="-30" max="10" step="0.5" id="SimSRTSlider" value="-15" style="width:220px;">
+<input type="number" step="0.5" class="InputClass" id="SimSRT" value="-15" />
+<br>
 		Starting SNR (dB SNR): <input type="number"  step="1" class="InputClass" id="StartingSNR" value="-2" /><br>
-		Number of trials in each adaptive track: <input type="number" step="1" class="InputClass" id="NumberOfTrials" value="15" /><br>
-		First target proportion correct to track: <input type="number" step="0.1" class="InputClass" id="pTarget1" value="0.2" /><br>
-		Second target proportion correct to track: <input type="number" step="0.1" class="InputClass" id="pTarget2" value="0.8" /><br>
+		Number of trials in single adaptive track:
+<input type="number" step="1" class="InputClass" id="NumberOfTrialsSingle" value="20" /><br>
+Number of trials in each dual adaptive track:
+<input type="number" step="1" class="InputClass" id="NumberOfTrialsDual" value="15" /><br>
+		<span id="singleTargetGroup">
+        Target proportion correct to track:
+        <input type="number" step="0.1" class="InputClass" id="pTargetSingle" value="0.5" /><br>
+        </span>
+        <span id="dualTargetGroup" style="display:none;">
+        First target proportion correct to track:
+        <input type="number" step="0.1" class="InputClass" id="pTarget1" value="0.2" /><br>
+        Second target proportion correct to track:
+        <input type="number" step="0.1" class="InputClass" id="pTarget2" value="0.8" /><br>
+        </span>
  
  <button type="button" name="button" onclick="simulateTest()">
-            Go
+            Fit adaptive track
         </button>
+		<label><input type="checkbox" id="autoRun" checked> auto-rerun fit when parameters change</label>
+        <label><input type="checkbox" id="showFit"> show fitted psychometric function</label>
+        <br><br>
+        <button type="button" id="singleTrackBtn" class="mode-button active">Single track</button>
+        <button type="button" id="dualTrackBtn" class="mode-button">Dual track</button>
     </form>
     <br>
 	<div class="ResultsPlotClass" id="ResultsPlot"><!-- Plotly chart will be drawn inside this DIV --></div>
@@ -212,28 +252,426 @@
 }
 
 
-// Function to generate negative log likelihood cost function for fitting
+// Negative log likelihood for individual word-level Bernoulli data.
+// Parameters are [SRT, logSlope] so Nelder-Mead cannot propose a negative slope.
+function negativeLogLikelihoodForFit(params) {
+    const fitSRT = params[0];
+    const fitSlope = Math.exp(params[1]);
+    const epsilon = 1e-12;
+
+    if (!isFinite(fitSRT) || !isFinite(fitSlope) || fitSlope <= 0 || fitSlope > 10) {
+        return Number.POSITIVE_INFINITY;
+    }
+
+    let nll = 0;
+    for (let i = 0; i < individualworddata_xvalues.length; i++) {
+        let p = intelligibility(individualworddata_xvalues[i], fitSRT, fitSlope, SImax);
+
+        // Guard against log(0), and against numerical overflow/underflow.
+        p = Math.min(1 - epsilon, Math.max(epsilon, p));
+
+        const y = individualworddata_yvalues[i];
+        nll += -1 * (y * Math.log(p) + (1 - y) * Math.log(1 - p));
+    }
+
+    return nll;
+}
+
+// Backwards-compatible wrapper retained for the output variable names used elsewhere.
 function generatenegativeloglikelihood(FitSRT, FitSlope, FitSImax) {
-    for (let generatenegativeloglikelihood_i = 1; generatenegativeloglikelihood_i < individualworddata_xvalues.length + 1; generatenegativeloglikelihood_i++) {
-        let testfityvalue = intelligibility(individualworddata_xvalues[generatenegativeloglikelihood_i - 1], FitSRT, FitSlope, FitSImax);
+    individualworddata_testfityvalues = [];
+    individualworddata_testfityvalue_negativeloglikelihood = [];
+
+    const epsilon = 1e-12;
+    for (let i = 0; i < individualworddata_xvalues.length; i++) {
+        let testfityvalue = intelligibility(individualworddata_xvalues[i], FitSRT, FitSlope, FitSImax);
+        testfityvalue = Math.min(1 - epsilon, Math.max(epsilon, testfityvalue));
         individualworddata_testfityvalues.push(testfityvalue);
-        let negativeloglikelihood = -1 * Math.log((Math.pow(testfityvalue, individualworddata_yvalues[generatenegativeloglikelihood_i - 1]) * (Math.pow((1 - testfityvalue), 1 - individualworddata_yvalues[generatenegativeloglikelihood_i - 1]))));
+
+        let y = individualworddata_yvalues[i];
+        let negativeloglikelihood = -1 * (y * Math.log(testfityvalue) + (1 - y) * Math.log(1 - testfityvalue));
         individualworddata_testfityvalue_negativeloglikelihood.push(negativeloglikelihood);
-    };
+    }
+
     individualworddata_testfityvalue_negativeloglikelihood_SUM = sumArray(individualworddata_testfityvalue_negativeloglikelihood);
-    console.log(individualworddata_testfityvalue_negativeloglikelihood_SUM);
-};
+    return individualworddata_testfityvalue_negativeloglikelihood_SUM;
+}
+
+// Nelder-Mead downhill simplex optimizer for two parameters: SRT and log(slope).
+function nelderMead(objective, start, step, options) {
+    const alpha = 1;   // reflection
+    const gamma = 2;   // expansion
+    const rho = 0.5;   // contraction
+    const sigma = 0.5; // shrink
+
+    const maxIterations = options?.maxIterations ?? 400;
+    const tolerance = options?.tolerance ?? 1e-7;
+
+    let simplex = [
+        {x: [start[0], start[1]], fx: objective([start[0], start[1]])},
+        {x: [start[0] + step[0], start[1]], fx: objective([start[0] + step[0], start[1]])},
+        {x: [start[0], start[1] + step[1]], fx: objective([start[0], start[1] + step[1]])}
+    ];
+
+    for (let iter = 0; iter < maxIterations; iter++) {
+        simplex.sort((a, b) => a.fx - b.fx);
+
+        const best = simplex[0];
+        const second = simplex[1];
+        const worst = simplex[2];
+
+        const spread = Math.max(
+            Math.abs(best.fx - second.fx),
+            Math.abs(best.fx - worst.fx)
+        );
+
+        const size = Math.max(
+            Math.hypot(best.x[0] - second.x[0], best.x[1] - second.x[1]),
+            Math.hypot(best.x[0] - worst.x[0], best.x[1] - worst.x[1])
+        );
+
+        if (spread < tolerance && size < tolerance) {
+            return {x: best.x, fx: best.fx, iterations: iter, converged: true};
+        }
+
+        const centroid = [
+            (best.x[0] + second.x[0]) / 2,
+            (best.x[1] + second.x[1]) / 2
+        ];
+
+        const reflectedX = [
+            centroid[0] + alpha * (centroid[0] - worst.x[0]),
+            centroid[1] + alpha * (centroid[1] - worst.x[1])
+        ];
+        const reflected = {x: reflectedX, fx: objective(reflectedX)};
+
+        if (reflected.fx < best.fx) {
+            const expandedX = [
+                centroid[0] + gamma * (reflected.x[0] - centroid[0]),
+                centroid[1] + gamma * (reflected.x[1] - centroid[1])
+            ];
+            const expanded = {x: expandedX, fx: objective(expandedX)};
+            simplex[2] = expanded.fx < reflected.fx ? expanded : reflected;
+            continue;
+        }
+
+        if (reflected.fx < second.fx) {
+            simplex[2] = reflected;
+            continue;
+        }
+
+        let contractedX;
+        if (reflected.fx < worst.fx) {
+            // Outside contraction
+            contractedX = [
+                centroid[0] + rho * (reflected.x[0] - centroid[0]),
+                centroid[1] + rho * (reflected.x[1] - centroid[1])
+            ];
+        } else {
+            // Inside contraction
+            contractedX = [
+                centroid[0] - rho * (centroid[0] - worst.x[0]),
+                centroid[1] - rho * (centroid[1] - worst.x[1])
+            ];
+        }
+
+        const contracted = {x: contractedX, fx: objective(contractedX)};
+
+        if (contracted.fx < worst.fx) {
+            simplex[2] = contracted;
+            continue;
+        }
+
+        // Shrink towards best point
+        simplex[1] = {
+            x: [
+                best.x[0] + sigma * (simplex[1].x[0] - best.x[0]),
+                best.x[1] + sigma * (simplex[1].x[1] - best.x[1])
+            ],
+            fx: 0
+        };
+        simplex[1].fx = objective(simplex[1].x);
+
+        simplex[2] = {
+            x: [
+                best.x[0] + sigma * (simplex[2].x[0] - best.x[0]),
+                best.x[1] + sigma * (simplex[2].x[1] - best.x[1])
+            ],
+            fx: 0
+        };
+        simplex[2].fx = objective(simplex[2].x);
+    }
+
+    simplex.sort((a, b) => a.fx - b.fx);
+    return {x: simplex[0].x, fx: simplex[0].fx, iterations: maxIterations, converged: false};
+}
+
+function fitPsychometricFunctionNelderMead() {
+    if (individualworddata_xvalues.length < 2) {
+        FitSRT = SimSRT;
+        FitSlope = SimSlope;
+        individualworddata_testfityvalue_negativeloglikelihood_SUM = NaN;
+        return {converged: false, iterations: 0, fx: NaN};
+    }
+
+    const xs = individualworddata_xvalues.slice();
+    const sortedXs = xs.slice().sort((a, b) => a - b);
+    const medianX = sortedXs[Math.floor(sortedXs.length / 2)];
+
+    // Start near the adaptive track's centre, with the simulated slope as a sensible scale.
+    const startSRT = isFinite(medianX) ? medianX : SimSRT;
+    const startSlope = Math.max(0.001, Math.min(2, Math.abs(SimSlope) || 0.1));
+
+    const result = nelderMead(
+        negativeLogLikelihoodForFit,
+        [startSRT, Math.log(startSlope)],
+        [2.0, 0.5],
+        {maxIterations: 500, tolerance: 1e-8}
+    );
+
+    FitSRT = result.x[0];
+    FitSlope = Math.exp(result.x[1]);
+    FitSImax = SImax;
+    individualworddata_testfityvalue_negativeloglikelihood_SUM = result.fx;
+
+    // Populate the existing per-word fitted arrays for output/debugging consistency.
+    generatenegativeloglikelihood(FitSRT, FitSlope, FitSImax);
+
+    return result;
+}
 	  
+
+var singleTrackLast = 0.5;
+var dualTrackLast1 = 0.2;
+var dualTrackLast2 = 0.8;
+var currentMode = 'single';
+var autoFitArmed = false;
+
+function setModeButtonState(mode) {
+ const singleBtn = document.getElementById('singleTrackBtn');
+ const dualBtn = document.getElementById('dualTrackBtn');
+ if (!singleBtn || !dualBtn) { return; }
+ singleBtn.classList.toggle('active', mode === 'single');
+ dualBtn.classList.toggle('active', mode === 'dual');
+}
+
+function updateTrialCountGhosting(mode) {
+ const singleTrials = document.getElementById('NumberOfTrialsSingle');
+ const dualTrials = document.getElementById('NumberOfTrialsDual');
+ if (!singleTrials || !dualTrials) { return; }
+ singleTrials.disabled = mode !== 'single';
+ dualTrials.disabled = mode !== 'dual';
+ singleTrials.classList.toggle('ghosted', mode !== 'single');
+ dualTrials.classList.toggle('ghosted', mode !== 'dual');
+}
+
+
+function getFixedXAxisRange() {
+    return [-30, 10];
+}
+
+function buildPsychometricXValues(xMin, xMax, n) {
+    const xs = [];
+    for (let i = 0; i < n; i++) {
+        xs.push(xMin + i * ((xMax - xMin) / (n - 1)));
+    }
+    return xs;
+}
+
+function updateSimulatedListenerCurveOnly() {
+    const plotDiv = document.getElementById('ResultsPlot');
+    if (!plotDiv || !plotDiv.data || !plotDiv.data.length) {
+        return;
+    }
+
+    SimSRT = 1 * document.getElementById("SimSRT").value;
+    SimSlope = 1 * document.getElementById("SimSlope").value;
+    WordsPerSentence = 1 * document.getElementById("WordsPerSentence").value;
+    OptionsPerWord = 1 * document.getElementById("OptionsPerWord").value;
+    A = Math.pow(OptionsPerWord, WordsPerSentence);
+
+    const xRange = getFixedXAxisRange();
+    const xs = buildPsychometricXValues(xRange[0], xRange[1], 50);
+    const ys = xs.map(x => intelligibility(x, SimSRT, SimSlope, SImax));
+
+    const simCurveIndex = plotDiv.data.findIndex(trace => trace.name === 'simulated psychometric function');
+    const simSRTIndex = plotDiv.data.findIndex(trace => trace.name && trace.name.startsWith('Simulated SRT ='));
+
+    if (simCurveIndex >= 0) {
+        Plotly.restyle('ResultsPlot', {x: [xs], y: [ys]}, [simCurveIndex]);
+    }
+
+    if (simSRTIndex >= 0) {
+        Plotly.restyle('ResultsPlot', {
+            x: [[xRange[0], SimSRT, SimSRT]],
+            y: [[intelligibility(SimSRT, SimSRT, SimSlope, SImax), intelligibility(SimSRT, SimSRT, SimSlope, SImax), 0]],
+            name: ['Simulated SRT = ' + (Math.round(SimSRT * 100) / 100)]
+        }, [simSRTIndex]);
+    }
+}
+
+
+function plotSimulatedListenerOnly() {
+    WordsPerSentence = 1 * document.getElementById("WordsPerSentence").value;
+    OptionsPerWord = 1 * document.getElementById("OptionsPerWord").value;
+    SimSRT = 1 * document.getElementById("SimSRT").value;
+    SimSlope = 1 * document.getElementById("SimSlope").value;
+    A = Math.pow(OptionsPerWord, WordsPerSentence);
+
+    const xRange = getFixedXAxisRange();
+    const xs = buildPsychometricXValues(xRange[0], xRange[1], 50);
+    const ys = xs.map(x => intelligibility(x, SimSRT, SimSlope, SImax));
+
+    const simSRTTrace = {
+        x: [xRange[0], SimSRT, SimSRT],
+        y: [intelligibility(SimSRT, SimSRT, SimSlope, SImax), intelligibility(SimSRT, SimSRT, SimSlope, SImax), 0],
+        mode: 'lines',
+        yaxis: 'y2',
+        type: 'scatter',
+        name: 'Simulated SRT = ' + (Math.round(SimSRT * 100) / 100),
+        line: {
+            color: 'rgb(200, 200, 200)',
+            dash: 'dot',
+            width: 3
+        }
+    };
+
+    const simCurveTrace = {
+        x: xs,
+        y: ys,
+        mode: 'lines',
+        yaxis: 'y2',
+        type: 'scatter',
+        name: 'simulated psychometric function',
+        line: {
+            color: 'rgb(64, 64, 64)',
+            opacity: 0.5,
+            width: 3
+        }
+    };
+
+    const layout = {
+        width: 600,
+        height: 500,
+        title: "Simulated listener function",
+        showlegend: true,
+        legend: {
+            x: .95,
+            y: 0.5
+        },
+        xaxis: {
+            nticks: 10,
+            range: getFixedXAxisRange(),
+            domain: [0, .9],
+            title: "SNR (dB SNR)"
+        },
+        yaxis: {
+            range: [0, 1],
+            domain: [0, 0.45],
+            title: "Presentation"
+        },
+        yaxis2: {
+            range: [0, 1.1],
+            domain: [0.55, 1],
+            title: "proportion correct"
+        }
+    };
+
+    Plotly.newPlot('ResultsPlot', [simSRTTrace, simCurveTrace], layout);
+}
+
+function updateMode(mode){
+ currentMode = mode;
+ setModeButtonState(mode);
+ updateTrialCountGhosting(mode);
+
+ const singleGroup = document.getElementById('singleTargetGroup');
+ const dualGroup = document.getElementById('dualTargetGroup');
+ const pSingle = document.getElementById('pTargetSingle');
+ const p1 = document.getElementById('pTarget1');
+ const p2 = document.getElementById('pTarget2');
+ const runBtn = document.querySelector('button[name="button"]');
+
+ // Save current values before hiding their controls.
+ if (pSingle && pSingle.value !== '') {
+   singleTrackLast = pSingle.value;
+ }
+ if (p1 && p1.value !== '') {
+   dualTrackLast1 = p1.value;
+ }
+ if (p2 && p2.value !== '') {
+   dualTrackLast2 = p2.value;
+ }
+
+ if(mode === 'single'){
+   singleGroup.style.display = '';
+   dualGroup.style.display = 'none';
+   pSingle.value = singleTrackLast || 0.5;
+   runBtn.innerText = 'Fit adaptive track';
+ } else {
+   singleGroup.style.display = 'none';
+   dualGroup.style.display = '';
+   p1.value = dualTrackLast1 || 0.2;
+   p2.value = dualTrackLast2 || 0.8;
+   runBtn.innerText = 'Fit adaptive tracks';
+ }
+
+ if(document.getElementById('autoRun').checked && autoFitArmed){simulateTest();}
+}
+
+window.addEventListener('load',()=>{
+ const srt=document.getElementById('SimSRT');
+ const srtS=document.getElementById('SimSRTSlider');
+ const slope=document.getElementById('SimSlope');
+ const slopeS=document.getElementById('SimSlopeSlider');
+
+ srtS.oninput=()=>{srt.value=srtS.value;updateSimulatedListenerCurveOnly();if(autoRun.checked && autoFitArmed)simulateTest();};
+ srt.oninput=()=>{srtS.value=srt.value;updateSimulatedListenerCurveOnly();if(autoRun.checked && autoFitArmed)simulateTest();};
+
+ slopeS.oninput=()=>{slope.value=slopeS.value;updateSimulatedListenerCurveOnly();if(autoRun.checked && autoFitArmed)simulateTest();};
+ slope.oninput=()=>{slopeS.value=slope.value;updateSimulatedListenerCurveOnly();if(autoRun.checked && autoFitArmed)simulateTest();};
+
+ document.getElementById('singleTrackBtn').onclick=()=>updateMode('single');
+ document.getElementById('dualTrackBtn').onclick=()=>updateMode('dual');
+
+ const runIfAuto = ()=>{if(document.getElementById('autoRun').checked && autoFitArmed)simulateTest();};
+ ['WordsPerSentence','OptionsPerWord','StartingSNR','NumberOfTrialsSingle','NumberOfTrialsDual','pTargetSingle','pTarget1','pTarget2'].forEach(id=>{
+   document.getElementById(id).addEventListener('input',runIfAuto);
+ });
+ document.getElementById('showFit').addEventListener('change',()=>{
+   const plotDiv = document.getElementById('ResultsPlot');
+   if (!plotDiv || !plotDiv.data) { return; }
+   const fitIndex = plotDiv.data.findIndex(trace => trace.name && trace.name.startsWith('MLE fit:'));
+   if (fitIndex >= 0) {
+     Plotly.restyle('ResultsPlot', {visible: document.getElementById('showFit').checked}, [fitIndex]);
+   }
+ });
+
+ updateMode(currentMode);
+ plotSimulatedListenerOnly();
+});
+
 function simulateTest() {
+    autoFitArmed = true;
     //Get inputs from the form
     WordsPerSentence = 1 * document.getElementById("WordsPerSentence").value;
     OptionsPerWord = 1 * document.getElementById("OptionsPerWord").value;
     SimSRT = 1 * document.getElementById("SimSRT").value;
     SimSlope = 1 * document.getElementById("SimSlope").value;
     StartingSNR = 1 * document.getElementById("StartingSNR").value;
-    NumberOfTrials = 1 * document.getElementById("NumberOfTrials").value;
-    pTarget1 = document.getElementById("pTarget1").value;
-    pTarget2 = document.getElementById("pTarget2").value;
+    NumberOfTrials = currentMode === 'single'
+        ? 1 * document.getElementById("NumberOfTrialsSingle").value
+        : 1 * document.getElementById("NumberOfTrialsDual").value;
+    if (currentMode === 'single') {
+        pTarget1 = document.getElementById("pTargetSingle").value;
+        pTarget2 = "";
+        singleTrackLast = pTarget1;
+    } else {
+        pTarget1 = document.getElementById("pTarget1").value;
+        pTarget2 = document.getElementById("pTarget2").value;
+        dualTrackLast1 = pTarget1;
+        dualTrackLast2 = pTarget2;
+    }
     
 	
     //Define some other variables
@@ -493,14 +931,23 @@ function simulateTest() {
     if (SNR2 < psychoplotx_min) {
         psychoplotx_min = SNR2;
     } // do once more to check final value
+    const fixedXAxisRange = getFixedXAxisRange();
     for (var plotxiteration = 0; plotxiteration < 50; plotxiteration++) {
-        psychoplotxvalues.push(plotxiteration * ((Math.round((psychoplotx_max + 3) / 5) * 5 - Math.round((psychoplotx_min - 3) / 5) * 5) / 49) + Math.round((psychoplotx_min - 3) / 5) * 5);
+        psychoplotxvalues.push(fixedXAxisRange[0] + plotxiteration * ((fixedXAxisRange[1] - fixedXAxisRange[0]) / 49));
     }
     for (var plotyiteration = 0; plotyiteration < 50; plotyiteration++) {
         psychoplotyvalues.push(intelligibility(psychoplotxvalues[plotyiteration],SimSRT, SimSlope, SImax));
     }
 
-generatenegativeloglikelihood (FitSRT, FitSlope, FitSImax);
+const fitResult = fitPsychometricFunctionNelderMead();
+
+    document.getElementById("shortpsychometricdataoutputtext").innerHTML +=
+        '<br><br>Maximum-likelihood Nelder-Mead fit:' +
+        '<br>Estimated SRT = ' + (Math.round(FitSRT * 100) / 100) + ' dB SNR' +
+        '<br>Estimated slope = ' + (Math.round(FitSlope * 10000) / 10000) +
+        '<br>Negative log likelihood = ' + (Math.round(individualworddata_testfityvalue_negativeloglikelihood_SUM * 100) / 100) +
+        '<br>Converged = ' + fitResult.converged +
+        '<br>Iterations = ' + fitResult.iterations;
 
 
     // Plot the psychometric functions and adaptive tracks
@@ -534,12 +981,12 @@ generatenegativeloglikelihood (FitSRT, FitSlope, FitSImax);
     };
 
     const trace3 = {
-        x: [Math.round((psychoplotx_min - 3) / 5) * 5, SimSRT, SimSRT], // in the actual test, these would be the x values of the fitted function
+        x: [getFixedXAxisRange()[0], SimSRT, SimSRT], // simulated listener SRT marker
         y: [intelligibility(SimSRT, SimSRT, SimSlope, SImax), intelligibility(SimSRT, SimSRT, SimSlope, SImax), 0], // in the actual test, these would be the y values of the fitted function
         mode: 'lines',
         yaxis: 'y2',
         type: 'scatter',
-        name: 'SRT = ' + (Math.round(SimSRT * 100) / 100),
+        name: 'Simulated SRT = ' + (Math.round(SimSRT * 100) / 100),
         line: {
             color: 'rgb(200, 200, 200)',
             dash: 'dot',
@@ -587,12 +1034,33 @@ generatenegativeloglikelihood (FitSRT, FitSlope, FitSImax);
         }
     };
 
-    const data = [trace1, trace2, trace3, trace4, adaptivetrackplot1, adaptivetrackplot2];
+    const fitTrace = {
+        x: psychoplotxvalues,
+        y: psychoplotxvalues.map(v=>intelligibility(v, FitSRT, FitSlope, SImax)),
+        mode:'lines',
+        yaxis:'y2',
+        type:'scatter',
+        visible: document.getElementById('showFit').checked,
+        name:'MLE fit: SRT=' + (Math.round(FitSRT * 100) / 100) + ', slope=' + (Math.round(FitSlope * 10000) / 10000),
+        line:{color:'rgb(220,80,80)',dash:'dash',width:2}
+    };
+
+    const fitSRTTrace = {
+        x:[FitSRT,FitSRT],
+        y:[0,intelligibility(FitSRT, FitSRT, FitSlope, SImax)],
+        mode:'lines',
+        yaxis:'y2',
+        type:'scatter',
+        name:'Track-estimated SRT = ' + (Math.round(FitSRT * 100) / 100),
+        line:{color:'rgb(180,60,60)',dash:'dot',width:3}
+    };
+
+    const data = [trace1, trace2, trace3, trace4, fitTrace, fitSRTTrace, adaptivetrackplot1, adaptivetrackplot2];
 
     const layout = {
         width: 600,
         height: 500,
-        title: "Results",
+        title: "Adaptive track fit",
 		showlegend: true,
 		legend: {
 			x: .95,
@@ -600,7 +1068,7 @@ generatenegativeloglikelihood (FitSRT, FitSlope, FitSImax);
 		},
         xaxis: {
             nticks: 10,
-            range: [Math.round((psychoplotx_min - 3) / 5) * 5, Math.round((psychoplotx_max + 3) / 5) * 5],
+            range: getFixedXAxisRange(),
             domain: [0, .9],
             title: "SNR (dB SNR)"
         },
