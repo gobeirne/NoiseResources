@@ -234,7 +234,7 @@
 
   .file-row {
     display: grid;
-    grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px;
+    grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px 4px 52px;
     align-items: center;
     padding: 5px 8px;
     background: var(--surface);
@@ -257,7 +257,7 @@
 
   .file-header {
     display: grid;
-    grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px;
+    grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px 4px 52px;
     padding: 3px 8px;
     gap: 6px;
     font-size: 9px;
@@ -297,6 +297,36 @@
     justify-self: center;
     align-self: stretch;
     opacity: 0.5;
+  }
+
+  .play-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-dim);
+    font-size: 9px;
+    font-family: var(--mono);
+    padding: 2px 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.2;
+    transition: all 0.15s;
+  }
+  .play-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .play-btn.playing {
+    border-color: var(--gold);
+    color: var(--gold);
+    background: rgba(255,200,50,0.08);
+  }
+
+  .file-row.selected {
+    background: var(--surface-hover, #1a1f2e);
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+
+  .file-row.playing-row {
+    background: rgba(255,200,50,0.06);
   }
 
   .summary-box {
@@ -535,6 +565,9 @@
     <button class="primary" onclick="chooseSourceFolder()">Load Folder</button>
     <input type="file" id="fileInput" multiple accept="audio/*" style="display:none" onchange="handleFiles(this.files)">
     <button class="secondary" id="exportBtn" onclick="copyTSV()" style="display:none">Copy TSV</button>
+    <button class="secondary" id="playOrigBtn" onclick="playSelected(false)" style="display:none">▶ Original</button>
+    <button class="secondary" id="playAdjBtn" onclick="playSelected(true)" style="display:none">▶ Adjusted</button>
+    <button class="secondary" id="stopBtn" onclick="stopPlayback()" style="display:none">■ Stop</button>
     <button class="apply-btn" id="applyBtn" onclick="applyGains(false)" style="display:none">Save WAVs to Folder</button>
     <button class="apply-btn" id="applyZipBtn" onclick="applyGains(true)" style="display:none">Save ZIP</button>
   </div>
@@ -744,10 +777,115 @@ let audioFiles = [];
 let globalTarget = null;
 let audioCtx = null;
 let sourceDirHandle = null;
+let selectedFileName = null;
+let currentSource = null;  // currently playing AudioBufferSourceNode
+let playingFileName = null;
+let playingAdjusted = false;
 
 function getAudioContext() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return audioCtx;
+}
+
+function selectFile(name) {
+  selectedFileName = name;
+  // Update row highlights without full re-render
+  document.querySelectorAll('.file-row').forEach(row => {
+    const nameSpan = row.querySelector('.name');
+    if (nameSpan && nameSpan.title === name) {
+      row.classList.add('selected');
+    } else {
+      row.classList.remove('selected');
+    }
+  });
+}
+
+function playSelected(adjusted) {
+  const sorted = [...audioFiles].sort((a,b) => a.name.localeCompare(b.name));
+
+  // If nothing selected, select first file
+  if (!selectedFileName || !sorted.find(f => f.name === selectedFileName)) {
+    if (sorted.length === 0) return;
+    selectedFileName = sorted[0].name;
+  }
+
+  const file = sorted.find(f => f.name === selectedFileName);
+  if (!file) return;
+
+  stopPlayback();
+
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') ctx.resume();
+
+  const source = ctx.createBufferSource();
+  source.buffer = file.buffer;
+
+  if (adjusted && file.gain !== undefined) {
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = Math.pow(10, file.gain / 20);
+    source.connect(gainNode);
+    gainNode.connect(ctx.destination);
+  } else {
+    source.connect(ctx.destination);
+  }
+
+  currentSource = source;
+  playingFileName = file.name;
+  playingAdjusted = adjusted;
+
+  // Highlight playing row
+  document.querySelectorAll('.file-row').forEach(row => {
+    row.classList.remove('playing-row');
+    const nameSpan = row.querySelector('.name');
+    if (nameSpan && nameSpan.title === file.name) {
+      row.classList.add('playing-row');
+    }
+  });
+
+  // Update button states
+  const btn = adjusted ? document.getElementById('playAdjBtn') : document.getElementById('playOrigBtn');
+  btn.style.borderColor = 'var(--gold)';
+  btn.style.color = 'var(--gold)';
+
+  source.onended = () => {
+    // Auto-advance to next file
+    const idx = sorted.findIndex(f => f.name === file.name);
+    currentSource = null;
+    playingFileName = null;
+
+    // Reset button styles
+    document.getElementById('playOrigBtn').style.borderColor = '';
+    document.getElementById('playOrigBtn').style.color = '';
+    document.getElementById('playAdjBtn').style.borderColor = '';
+    document.getElementById('playAdjBtn').style.color = '';
+    document.querySelectorAll('.file-row').forEach(r => r.classList.remove('playing-row'));
+
+    if (idx >= 0 && idx < sorted.length - 1) {
+      selectedFileName = sorted[idx + 1].name;
+      selectFile(selectedFileName);
+      // Small gap between files
+      setTimeout(() => playSelected(adjusted), 300);
+    }
+  };
+
+  source.start(0);
+}
+
+function stopPlayback() {
+  if (currentSource) {
+    try {
+      currentSource.onended = null;
+      currentSource.stop();
+    } catch(e) {}
+    currentSource = null;
+  }
+  playingFileName = null;
+  // Reset button styles
+  const origBtn = document.getElementById('playOrigBtn');
+  const adjBtn = document.getElementById('playAdjBtn');
+  if (origBtn) { origBtn.style.borderColor = ''; origBtn.style.color = ''; }
+  if (adjBtn) { adjBtn.style.borderColor = ''; adjBtn.style.color = ''; }
+  document.querySelectorAll('.file-row.playing-row').forEach(r => r.classList.remove('playing-row'));
 }
 
 function setWeighting(mode) {
@@ -916,10 +1054,16 @@ function measureLevel(audioBuffer, weightFn) {
     : meanLev; // fallback to ungated if nothing passes gate
 
   let peak = 0;
-  for (let i = 0; i < raw.length; i++) { const a = Math.abs(raw[i]); if (a > peak) peak = a; }
+  let rawSumSq = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const a = Math.abs(raw[i]);
+    if (a > peak) peak = a;
+    rawSumSq += raw[i] * raw[i];
+  }
   const peakDB = 20 * Math.log10(Math.max(peak, 1e-20));
+  const rmsDB = raw.length > 0 ? 20 * Math.log10(Math.max(Math.sqrt(rawSumSq / raw.length), 1e-20)) : -Infinity;
 
-  return { maxMomentary: maxMom, meanMomentary: meanLev, p90Level, gatedMeanLevel, peakDB, duration };
+  return { maxMomentary: maxMom, meanMomentary: meanLev, p90Level, gatedMeanLevel, peakDB, rmsDB, duration };
 }
 
 function nextPow2(n) { let p = 1; while (p < n) p *= 2; return p; }
@@ -1116,6 +1260,7 @@ function recompute() {
     f.p90Level = r.p90Level;
     f.gatedMeanLevel = r.gatedMeanLevel;
     f.peakDB = r.peakDB;
+    f.rmsDB = r.rmsDB;
     f.duration = r.duration;
     const lufs = measureLUFS(f.buffer);
     f.lufsMomentary = lufs.momentary;
@@ -1143,6 +1288,9 @@ function renderUI() {
   document.getElementById('targetDisplay').textContent = targetLabel;
   document.getElementById('targetDisplay').style.color = colorVar;
   document.getElementById('exportBtn').style.display = 'inline-block';
+  document.getElementById('playOrigBtn').style.display = 'inline-block';
+  document.getElementById('playAdjBtn').style.display = 'inline-block';
+  document.getElementById('stopBtn').style.display = 'inline-block';
   document.getElementById('applyBtn').style.display = 'inline-block';
   document.getElementById('applyZipBtn').style.display = 'inline-block';
 
@@ -1182,21 +1330,25 @@ function renderUI() {
 
   document.getElementById('mainLayout').innerHTML = `
     <div class="results-panel">
-      <div class="group-header" style="grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px;">
+      <div class="group-header" style="grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px 4px 52px;">
         <span></span><span></span><span></span>
         <span class="group-label" style="grid-column: span 4; color:${colorVar};">${{A:'A-weighted',MAF:'MAF-weighted',None:'Unweighted'}[currentWeighting]}</span>
         <span class="group-sep"></span>
         <span class="group-label" style="grid-column: span 3; color:var(--text-dim);">LUFS (K-weighted)</span>
         <span class="group-sep"></span>
         <span class="group-label" style="grid-column: span 3; color:var(--text-dim);">Unweighted</span>
+        <span class="group-sep"></span>
+        <span class="group-label" style="grid-column: span 1; color:var(--text-dim);"></span>
       </div>
-      <div class="file-header" style="grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px;">
+      <div class="file-header" style="grid-template-columns: 26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px 4px 52px;">
         <span>#</span><span>File</span><span>Len</span>
         <span>Mom</span><span>P90</span><span>G.Mean</span><span>Mean</span>
         <span class="col-sep"></span>
         <span>LU.M</span><span>LU.ST</span><span>LU.I</span>
         <span class="col-sep"></span>
-        <span>Peak</span><span>TPk</span><span>Gain</span>
+        <span>Peak</span><span>TPk</span><span>RMS</span>
+        <span class="col-sep"></span>
+        <span>Gain</span>
       </div>
       <div class="file-list" id="fileList"></div>
     </div>
@@ -1239,6 +1391,7 @@ function renderUI() {
         <strong>LU.I</strong> = LUFS integrated — K-weighted gated mean (BS.1770-style). Best for longer speech.<br>
         <strong>Peak</strong> = sample peak (unweighted, dBFS).<br>
         <strong>TPk</strong> = 4x interpolated true-peak estimate.<br>
+        <strong>RMS</strong> = full-file unweighted RMS level (dBFS).<br>
         The column driving gain is highlighted. Mom/P90/G.Mean/Mean use the selected weighting; LU.M and LU.I always use K-weighting; Peak is unweighted.
       </div>
       <div id="applyStatus"></div>
@@ -1249,7 +1402,10 @@ function renderUI() {
   sorted.forEach((f, i) => {
     const row = document.createElement('div');
     row.className = 'file-row';
-    row.style.gridTemplateColumns = '26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px';
+    row.style.gridTemplateColumns = '26px 1fr 44px 52px 52px 52px 52px 4px 52px 52px 52px 4px 52px 52px 52px 4px 52px';
+    row.style.cursor = 'pointer';
+    row.onclick = () => selectFile(f.name);
+    if (f.name === selectedFileName) row.classList.add('selected');
     const gs = f.gain >= 0 ? '+' : '';
     const gc = Math.abs(f.gain) > 3 ? 'var(--gold)' : 'var(--text-dim)';
     const cls = k => gainSource === k ? 'src' : 'nosrc';
@@ -1268,6 +1424,8 @@ function renderUI() {
       <span class="col-sep"></span>
       <span class="metric ${cls('peak')}">${f.peakDB.toFixed(1)}</span>
       <span class="metric dim">${f.truePeakDB.toFixed(1)}</span>
+      <span class="metric dim">${f.rmsDB.toFixed(1)}</span>
+      <span class="col-sep"></span>
       <span class="metric gain-col" style="color:${gc}">${gs}${f.gain.toFixed(1)}</span>
     `;
     listEl.appendChild(row);
@@ -1350,9 +1508,9 @@ function buildCSV() {
   const unit = unitMap[currentWeighting];
   const srcLabels = {momentary:'Momentary',p90:'P90',gatedMean:'GatedMean',mean:'Mean',lufs_mom:'LUFS_Mom',lufs_int:'LUFS_Int',peak:'Peak'};
   const src = srcLabels[gainSource];
-  let csv = `File,Duration_s,Momentary_${unit},P90_${unit},GatedMean_${unit},Mean_${unit},LUFS_Mom,LUFS_ShortTerm,LUFS_Int,Peak_dBFS,TruePeak_dBTP,GainFrom,Gain_dB,Target,Gate_dB\n`;
+  let csv = `File,Duration_s,Momentary_${unit},P90_${unit},GatedMean_${unit},Mean_${unit},LUFS_Mom,LUFS_ShortTerm,LUFS_Int,Peak_dBFS,TruePeak_dBTP,RMS_dBFS,GainFrom,Gain_dB,Target,Gate_dB\n`;
   [...audioFiles].sort((a,b)=>a.name.localeCompare(b.name)).forEach(f=>{
-    csv += `"${f.name}",${f.duration.toFixed(3)},${f.momentaryLevel.toFixed(2)},${f.p90Level.toFixed(2)},${f.gatedMeanLevel.toFixed(2)},${f.meanMomentary.toFixed(2)},${f.lufsMomentary.toFixed(2)},${f.lufsShortTerm.toFixed(2)},${f.lufsIntegrated.toFixed(2)},${f.peakDB.toFixed(2)},${f.truePeakDB.toFixed(2)},${src},${f.gain.toFixed(2)},${globalTarget.toFixed(2)},${gateThresholdDB}\n`;
+    csv += `"${f.name}",${f.duration.toFixed(3)},${f.momentaryLevel.toFixed(2)},${f.p90Level.toFixed(2)},${f.gatedMeanLevel.toFixed(2)},${f.meanMomentary.toFixed(2)},${f.lufsMomentary.toFixed(2)},${f.lufsShortTerm.toFixed(2)},${f.lufsIntegrated.toFixed(2)},${f.peakDB.toFixed(2)},${f.truePeakDB.toFixed(2)},${f.rmsDB.toFixed(2)},${src},${f.gain.toFixed(2)},${globalTarget.toFixed(2)},${gateThresholdDB}\n`;
   });
   return csv;
 }
@@ -1363,9 +1521,9 @@ function buildTSV() {
   const srcLabels = {momentary:'Momentary',p90:'P90',gatedMean:'GatedMean',mean:'Mean',lufs_mom:'LUFS_Mom',lufs_int:'LUFS_Int',peak:'Peak'};
   const src = srcLabels[gainSource];
   const t = '\t';
-  let tsv = `File${t}Duration_s${t}Momentary_${unit}${t}P90_${unit}${t}GatedMean_${unit}${t}Mean_${unit}${t}LUFS_Mom${t}LUFS_ShortTerm${t}LUFS_Int${t}Peak_dBFS${t}TruePeak_dBTP${t}GainFrom${t}Gain_dB${t}Target${t}Gate_dB\n`;
+  let tsv = `File${t}Duration_s${t}Momentary_${unit}${t}P90_${unit}${t}GatedMean_${unit}${t}Mean_${unit}${t}LUFS_Mom${t}LUFS_ShortTerm${t}LUFS_Int${t}Peak_dBFS${t}TruePeak_dBTP${t}RMS_dBFS${t}GainFrom${t}Gain_dB${t}Target${t}Gate_dB\n`;
   [...audioFiles].sort((a,b)=>a.name.localeCompare(b.name)).forEach(f=>{
-    tsv += `${f.name}${t}${f.duration.toFixed(3)}${t}${f.momentaryLevel.toFixed(2)}${t}${f.p90Level.toFixed(2)}${t}${f.gatedMeanLevel.toFixed(2)}${t}${f.meanMomentary.toFixed(2)}${t}${f.lufsMomentary.toFixed(2)}${t}${f.lufsShortTerm.toFixed(2)}${t}${f.lufsIntegrated.toFixed(2)}${t}${f.peakDB.toFixed(2)}${t}${f.truePeakDB.toFixed(2)}${t}${src}${t}${f.gain.toFixed(2)}${t}${globalTarget.toFixed(2)}${t}${gateThresholdDB}\n`;
+    tsv += `${f.name}${t}${f.duration.toFixed(3)}${t}${f.momentaryLevel.toFixed(2)}${t}${f.p90Level.toFixed(2)}${t}${f.gatedMeanLevel.toFixed(2)}${t}${f.meanMomentary.toFixed(2)}${t}${f.lufsMomentary.toFixed(2)}${t}${f.lufsShortTerm.toFixed(2)}${t}${f.lufsIntegrated.toFixed(2)}${t}${f.peakDB.toFixed(2)}${t}${f.truePeakDB.toFixed(2)}${t}${f.rmsDB.toFixed(2)}${t}${src}${t}${f.gain.toFixed(2)}${t}${globalTarget.toFixed(2)}${t}${gateThresholdDB}\n`;
   });
   return tsv;
 }
