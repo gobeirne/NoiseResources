@@ -733,17 +733,8 @@ function simulateTest() {
 	longiteration = 0;
 	shortiteration = 0;
 	
-    // Brand & Kollmeier rules for first track - as per personal communication from Brand (3rd Feb 2015)
-    bk_rule1_1 = (pTarget1 <= 0.2) || (pTarget1 >= 0.8); // target intelligibility is <=20% or >=80%?
-    bk_rule2_1 = (result1 < 0.2 && pTarget1 <= 0.2) || (result1 > 0.8 && pTarget1 >= 0.8); // intelligibility is <=20% if target is or >=80% if target is?
-    bk_rule3_1 = Math.abs(deltaL1) > 0.5; // the speed factor is higher than 0.5?
-    bk_rule4_1 = bk_rule1_1 && bk_rule2_1 && bk_rule3_1; // rules 1 to 3 are met, therefore double step size?
-
-    // Brand & Kollmeier rules for second track - as per personal communication from Brand (3rd Feb 2015)
-    bk_rule1_2 = (pTarget2 <= 0.2) || (pTarget2 >= 0.8); // target intelligibility is <=20% or >=80%?
-    bk_rule2_2 = (result2 < 0.2 && pTarget2 <= 0.2) || (result2 > 0.8 && pTarget2 >= 0.8); // intelligibility is <=20% if target is or >=80% if target is?
-    bk_rule3_2 = Math.abs(deltaL2) > 0.5; // the speed factor is higher than 0.5?
-    bk_rule4_2 = bk_rule1_2 && bk_rule2_2 && bk_rule3_2; // rules 1 to 3 are met, therefore double step size?
+    // Brand & Kollmeier step-doubling rules are evaluated inside each trial,
+    // after the current response and speed factor have been calculated.
     
     // Use the Durstenfeld shuffle algorithm above to set up randomisation for the interleaved tracks
     if (NumberOfTrials % 2 == 0) {
@@ -807,9 +798,14 @@ function simulateTest() {
                 var newdeltaL1 = Math.sign(deltaL1) * minspeedfactor;
                 deltaL1 = newdeltaL1;
             }
+            // Brand & Kollmeier step-doubling rule: evaluate for this trial only.
+            bk_rule1_1 = (pTarget1 <= 0.2) || (pTarget1 >= 0.8); // target intelligibility is <=20% or >=80%?
+            bk_rule2_1 = (result1 < 0.2 && pTarget1 <= 0.2) || (result1 > 0.8 && pTarget1 >= 0.8); // previous rated intelligibility is at the matching extreme?
+            bk_rule3_1 = Math.abs(deltaL1) > 0.5; // the speed factor is higher than 0.5?
+            bk_rule4_1 = bk_rule1_1 && bk_rule2_1 && bk_rule3_1; // rules 1 to 3 are met, therefore double step size?
             let nextSNR1 = SNR1 - deltaL1;
             if (bk_rule4_1) {
-                nextSNR1 = SNR1 - 2 * deltaL1
+                nextSNR1 = SNR1 - 2 * deltaL1;
             }
             if (SNR1 > psychoplotx_max) {
                 psychoplotx_max = SNR1;
@@ -860,9 +856,14 @@ function simulateTest() {
                 var newdeltaL2 = Math.sign(deltaL2) * minspeedfactor;
                 deltaL2 = newdeltaL2;
             }
+            // Brand & Kollmeier step-doubling rule: evaluate for this trial only.
+            bk_rule1_2 = (pTarget2 <= 0.2) || (pTarget2 >= 0.8); // target intelligibility is <=20% or >=80%?
+            bk_rule2_2 = (result2 < 0.2 && pTarget2 <= 0.2) || (result2 > 0.8 && pTarget2 >= 0.8); // previous rated intelligibility is at the matching extreme?
+            bk_rule3_2 = Math.abs(deltaL2) > 0.5; // the speed factor is higher than 0.5?
+            bk_rule4_2 = bk_rule1_2 && bk_rule2_2 && bk_rule3_2; // rules 1 to 3 are met, therefore double step size?
             let nextSNR2 = SNR2 - deltaL2;
             if (bk_rule4_2) {
-                nextSNR2 = SNR2 - 2 * deltaL2
+                nextSNR2 = SNR2 - 2 * deltaL2;
             }
             if (SNR2 > psychoplotx_max) {
                 psychoplotx_max = SNR2;
